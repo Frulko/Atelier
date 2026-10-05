@@ -13,8 +13,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends git ca-certific
 # Client docker seul (le démon est celui de l'hôte, via le socket monté).
 COPY --from=docker:cli /usr/local/bin/docker /usr/local/bin/docker
 WORKDIR /app
-# L'orchestrateur n'a aucune dépendance d'exécution : pas d'« npm install ».
-COPY orchestrator/package.json ./
+# Seule dépendance d'exécution : le SDK d'IA de Vercel (et ses fournisseurs), pour la fenêtre de conversation.
+COPY orchestrator/package.json orchestrator/package-lock.json ./
+RUN npm ci --omit=dev --no-audit --no-fund
 COPY orchestrator/src ./src
 COPY --from=web /web/dist ./public
 ENV NODE_ENV=production PUBLIC_DIR=/app/public

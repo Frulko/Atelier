@@ -14,5 +14,13 @@
   "devDependencies": {
     "@types/node": "^24.0.0",
     "typescript": "^5.9.0"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.71",
+    "@ai-sdk/openai": "^4.0.83",
+    "@ai-sdk/openai-compatible": "^3.0.62",
+    "@ai-sdk/provider": "^4.0.21",
+    "ai": "^7.0.127",
+    "zod": "^4.6.5"
   }
 }

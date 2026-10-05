@@ -81,6 +81,18 @@ db.exec(`
     created_by text, created_at integer not null, updated_at integer not null
   );
   create index if not exists knowledge_org on knowledge(org_id);
+  create table if not exists conversations (
+    id text primary key, org_id text not null references orgs(id) on delete cascade,
+    user_id text not null, project_id text references projects(id) on delete set null,
+    mode text not null check (mode in ('chat','task')), title text not null,
+    task_id text, parent_id text, created_at integer not null, updated_at integer not null
+  );
+  create index if not exists conversations_org on conversations(org_id, updated_at);
+  create table if not exists messages (
+    id text primary key, conversation_id text not null references conversations(id) on delete cascade,
+    role text not null check (role in ('user','assistant')), parts text not null, meta text, created_at integer not null
+  );
+  create index if not exists messages_conv on messages(conversation_id, created_at);
   create table if not exists sessions (
     token_hash text primary key, user_id text not null references users(id) on delete cascade,
     created_at integer not null, expires_at integer not null
@@ -91,6 +103,8 @@ db.exec("pragma foreign_keys = on");
 // Migration M1 → U3 : les bases créées avant les organisations n'ont pas ces colonnes.
 const orgCols = (db.prepare("pragma table_info(orgs)").all() as { name: string }[]).map((c) => c.name);
 if (!orgCols.includes("budget_usd_month")) db.exec("alter table orgs add column budget_usd_month real");
+if (!orgCols.includes("chat_provider")) db.exec("alter table orgs add column chat_provider text");
+if (!orgCols.includes("chat_model")) db.exec("alter table orgs add column chat_model text");
 const taskCols = (db.prepare("pragma table_info(tasks)").all() as { name: string }[]).map((c) => c.name);
 if (!taskCols.includes("org_id")) db.exec("alter table tasks add column org_id text");
 if (!taskCols.includes("user_id")) db.exec("alter table tasks add column user_id text");
@@ -353,9 +367,9 @@ export const remapTaskProject = (orgId: string, from: string, to: string) =>
 
 /* ----------------------- organisation : budget mensuel ----------------------- */
 
-export type OrgRow = { id: string; name: string; budget_usd_month: number | null };
+export type OrgRow = { id: string; name: string; budget_usd_month: number | null; chat_provider: string | null; chat_model: string | null };
 export const getOrg = (id: string) =>
-  db.prepare("select id, name, budget_usd_month from orgs where id = ?").get(id) as OrgRow | undefined;
+  db.prepare("select id, name, budget_usd_month, chat_provider, chat_model from orgs where id = ?").get(id) as OrgRow | undefined;
 
 /** null = pas de plafond. */
 export const setOrgBudget = (orgId: string, usd: number | null) =>
@@ -540,8 +554,9 @@ export const activeTaskCount = (orgId: string) =>
 export function deleteOrgCascade(orgId: string) {
   db.exec("begin");
   try {
+    db.prepare("delete from messages where conversation_id in (select id from conversations where org_id = ?)").run(orgId);
     db.prepare("delete from events where task_id in (select id from tasks where org_id = ?)").run(orgId);
-    for (const t of ["tasks", "proxy_calls", "audit_log", "invitations", "knowledge", "projects", "secrets", "memberships"]) db.prepare(`delete from ${t} where org_id = ?`).run(orgId);
+    for (const t of ["conversations", "tasks", "proxy_calls", "audit_log", "invitations", "knowledge", "projects", "secrets", "memberships"]) db.prepare(`delete from ${t} where org_id = ?`).run(orgId);
     db.prepare("delete from orgs where id = ?").run(orgId);
     db.exec("commit");
   } catch (e) { db.exec("rollback"); throw e; }
@@ -579,3 +594,76 @@ export function updateKnowledge(id: string, orgId: string, p: { project_id?: str
 
 export const deleteKnowledge = (id: string, orgId: string) =>
   db.prepare("delete from knowledge where id = ? and org_id = ?").run(id, orgId).changes > 0;
+
+export const setOrgChat = (orgId: string, provider: string | null, model: string | null) =>
+  void db.prepare("update orgs set chat_provider = ?, chat_model = ? where id = ?").run(provider, model, orgId);
+
+/* ------------------------------- conversations ------------------------------- */
+
+export type Mode = "chat" | "task";
+export type ConversationRow = {
+  id: string; org_id: string; user_id: string; project_id: string | null; mode: Mode; title: string; task_id: string | null; parent_id: string | null;
+  created_at: number; updated_at: number; user_email?: string | null; project_name?: string | null; message_count?: number; last_text?: string | null;
+};
+export const DEFAULT_TITLE = "Nouvelle conversation";
+
+export function insertConversation(c: { org_id: string; user_id: string; project_id: string | null; mode: Mode; title?: string; task_id?: string | null; parent_id?: string | null }): string {
+  const id = rid(), now = Date.now();
+  db.prepare("insert into conversations (id, org_id, user_id, project_id, mode, title, task_id, parent_id, created_at, updated_at) values (?,?,?,?,?,?,?,?,?,?)")
+    .run(id, c.org_id, c.user_id, c.project_id, c.mode, c.title ?? DEFAULT_TITLE, c.task_id ?? null, c.parent_id ?? null, now, now);
+  return id;
+}
+
+const CONV_SELECT = `select c.*, u.email as user_email, p.name as project_name,
+  (select count(*) from messages m where m.conversation_id = c.id) as message_count,
+  (select m.parts from messages m where m.conversation_id = c.id order by m.created_at desc, m.rowid desc limit 1) as last_text
+  from conversations c left join users u on u.id = c.user_id left join projects p on p.id = c.project_id`;
+
+/** Les discussions sont PRIVÉES (leur auteur seul) ; les conversations de tâche sont visibles de toute l'organisation. */
+export const getConversationFor = (id: string, orgId: string, userId: string) =>
+  db.prepare(`${CONV_SELECT} where c.id = ? and c.org_id = ? and (c.mode = 'task' or c.user_id = ?)`).get(id, orgId, userId) as ConversationRow | undefined;
+
+export const getConversationByTask = (taskId: string) =>
+  db.prepare(`${CONV_SELECT} where c.task_id = ?`).get(taskId) as ConversationRow | undefined;
+
+export function listConversations(orgId: string, userId: string, f: { mode?: Mode; project?: string; q?: string; limit?: number; offset?: number } = {}) {
+  const where = ["c.org_id = ?", "(c.mode = 'task' or c.user_id = ?)"]; const args: (string | number)[] = [orgId, userId];
+  if (f.mode) { where.push("c.mode = ?"); args.push(f.mode); }
+  if (f.project) { where.push("c.project_id = ?"); args.push(f.project); }
+  if (f.q) { where.push("c.title like ? escape '\\'"); args.push(`%${f.q.replace(/[\\%_]/g, "\\$&")}%`); }
+  const limit = Math.min(Math.max(f.limit ?? 30, 1), 100), offset = Math.max(f.offset ?? 0, 0), w = where.join(" and ");
+  const total = (db.prepare(`select count(*) as n from conversations c where ${w}`).get(...args) as { n: number }).n;
+  const items = db.prepare(`${CONV_SELECT} where ${w} order by c.updated_at desc, c.rowid desc limit ? offset ?`).all(...args, limit, offset) as ConversationRow[];
+  return { items, total, limit, offset };
+}
+
+export const touchConversation = (id: string) => void db.prepare("update conversations set updated_at = ? where id = ?").run(Date.now(), id);
+export const setConversationTitle = (id: string, title: string) => void db.prepare("update conversations set title = ?, updated_at = ? where id = ?").run(title, Date.now(), id);
+export const deleteConversation = (id: string, orgId: string) => db.prepare("delete from conversations where id = ? and org_id = ?").run(id, orgId).changes > 0;
+export const countConversationsOf = (orgId: string, userId: string) =>
+  (db.prepare("select count(*) as n from conversations where org_id = ? and user_id = ? and mode = 'chat'").get(orgId, userId) as { n: number }).n;
+
+export type MessageRow = { id: string; conversation_id: string; role: "user" | "assistant"; parts: string; meta: string | null; created_at: number };
+
+export function insertMessage(conversationId: string, role: "user" | "assistant", parts: unknown[], meta?: unknown, id = rid()): string {
+  db.prepare("insert into messages (id, conversation_id, role, parts, meta, created_at) values (?,?,?,?,?,?)")
+    .run(id, conversationId, role, JSON.stringify(parts), meta === undefined ? null : JSON.stringify(meta), Date.now());
+  touchConversation(conversationId);
+  return id;
+}
+export const getMessages = (conversationId: string) =>
+  db.prepare("select * from messages where conversation_id = ? order by created_at, rowid").all(conversationId) as MessageRow[];
+export const countMessages = (conversationId: string) =>
+  (db.prepare("select count(*) as n from messages where conversation_id = ?").get(conversationId) as { n: number }).n;
+/** « Régénérer » : on retire la dernière réponse de l'assistant (et seulement elle). */
+export const deleteTrailingAssistant = (conversationId: string) =>
+  void db.prepare("delete from messages where id = (select id from messages where conversation_id = ? order by created_at desc, rowid desc limit 1) and role = 'assistant'").run(conversationId);
+
+/** Tokens consommés par les discussions (somme des métadonnées des réponses), pour la page d'usage. */
+export function chatTokens(orgId: string, from: number, to: number) {
+  let input = 0, output = 0, replies = 0;
+  for (const r of db.prepare("select m.meta from messages m join conversations c on c.id = m.conversation_id where c.org_id = ? and m.role = 'assistant' and m.created_at >= ? and m.created_at < ? and m.meta is not null").all(orgId, from, to) as { meta: string }[]) {
+    try { const u = JSON.parse(r.meta)?.usage; input += Number(u?.inputTokens) || 0; output += Number(u?.outputTokens) || 0; replies++; } catch { /* méta illisible : ignorée */ }
+  }
+  return { input, output, replies };
+}

@@ -1,5 +1,5 @@
 import http from "node:http";
-import { countKnowledge, deleteKnowledge, getKnowledge, insertKnowledge, listKnowledge, updateKnowledge, secretUsers, updateSecret, listSessions, deleteSessionByPrefix, setUserName, renameOrg, activeTaskCount, deleteOrgCascade, orgStats, orgUsage, queryAudit, userActivity, getUserById, STATUSES, queryTasks, getTaskDetail, type Status, addEvent, addMember, bus, consumeInvitation, countOrgsOf, countOwners, createOrg, createUser, deleteInvitation, findInvitation, insertInvitation, listInvitations, listMembers, removeMember, setMemberRole, createTask, getOrg, monthSpend, setOrgBudget, deleteProject, deleteSecret, getEvents, getProjectInOrg, getSecretRow, getTask, getTaskInOrg, getUserByEmail, insertProject, listProjects, listSecrets, listTasks, orgsOf, roleOf, secretInUse, updatePassword, updateProject, updateTask, type Evt, type Role, type User } from "./db.ts";
+import { countConversationsOf, countMessages, deleteConversation, getConversationFor, getMessages, insertConversation, listConversations, setConversationTitle, setOrgChat, type ConversationRow, countKnowledge, deleteKnowledge, getKnowledge, insertKnowledge, listKnowledge, updateKnowledge, secretUsers, updateSecret, listSessions, deleteSessionByPrefix, setUserName, renameOrg, activeTaskCount, deleteOrgCascade, orgStats, orgUsage, queryAudit, userActivity, getUserById, STATUSES, queryTasks, getTaskDetail, type Status, addEvent, addMember, bus, consumeInvitation, countOrgsOf, countOwners, createOrg, createUser, deleteInvitation, findInvitation, insertInvitation, listInvitations, listMembers, removeMember, setMemberRole, createTask, getOrg, monthSpend, setOrgBudget, deleteProject, deleteSecret, getEvents, getProjectInOrg, getSecretRow, getTask, getTaskInOrg, getUserByEmail, insertProject, listProjects, listSecrets, listTasks, orgsOf, roleOf, secretInUse, updatePassword, updateProject, updateTask, type Evt, type Role, type User } from "./db.ts";
 import { rotateSecret, storeSecret } from "./vault.ts";
 import { verifyAccess } from "./git.ts";
 import { rowToProject } from "./projects.ts";
@@ -15,6 +15,8 @@ import { can, canAssign, canTouch, ROLES, type Action } from "./access.ts";
 import { hashInviteToken, INVITE_TTL_MS, newInviteToken } from "./invites.ts";
 import { cancel, enqueue, newId } from "./pipeline.ts";
 import { securityHeaders, serveStatic } from "./static.ts";
+import { startTask } from "./start.ts";
+import { CHAT_PROVIDERS, effectiveChat, MAX_MESSAGE_CHARS, MAX_MESSAGES, runChat, textOf, toUIMessage } from "./chat.ts";
 
 const json = (res: http.ServerResponse, code: number, body: unknown, headers: Record<string, string> = {}) =>
   res.writeHead(code, { "content-type": "application/json", ...headers }).end(JSON.stringify(body));
@@ -57,10 +59,20 @@ const denyAccess = (res: http.ServerResponse, a: "not_found" | "forbidden") =>
 
 const orgJson = (orgId: string) => {
   const o = getOrg(orgId)!;
-  return { id: o.id, name: o.name, budgetUsdMonth: o.budget_usd_month, monthSpendUsd: Math.round(monthSpend(orgId) * 100) / 100 };
+  return { id: o.id, name: o.name, budgetUsdMonth: o.budget_usd_month, monthSpendUsd: Math.round(monthSpend(orgId) * 100) / 100, chat: { ...effectiveChat(o), providers: CHAT_PROVIDERS } };
 };
 
 const device = (req: http.IncomingMessage) => ({ userAgent: String(req.headers["user-agent"] ?? ""), ip: clientIp(req) });
+
+const chatLimiter = new FailureLimiter(30, 60_000); // 30 messages par minute et par personne : un garde-fou de coût
+
+const previewOf = (lastText: string | null | undefined) => {
+  try { return (JSON.parse(lastText ?? "[]") as { type: string; text?: string }[]).map((p) => (p.type === "text" ? p.text : "")).join(" ").replace(/\s+/g, " ").trim().slice(0, 140); } catch { return ""; }
+};
+const conversationJson = (c: ConversationRow) => ({
+  id: c.id, mode: c.mode, title: c.title, projectId: c.project_id, projectName: c.project_name ?? null, userId: c.user_id, userEmail: c.user_email ?? null,
+  taskId: c.task_id, parentId: c.parent_id, messageCount: c.message_count ?? 0, preview: previewOf(c.last_text), createdAt: c.created_at, updatedAt: c.updated_at,
+});
 
 const limiter = new FailureLimiter();
 const DUMMY_HASH = await hashPassword("mot de passe factice pour égaliser le temps de réponse");
@@ -187,9 +199,9 @@ export function createApp() {
       }
       if (og && req.method === "PATCH") {
         const b = await body(req);
-        const wantsName = b.name !== undefined, wantsBudget = b.budgetUsdMonth !== undefined;
-        if (!wantsName && !wantsBudget) return json(res, 400, { error: "rien à modifier" });
-        const a = access(user, og[1], wantsName ? "org:rename" : "org:budget");
+        const wantsName = b.name !== undefined, wantsBudget = b.budgetUsdMonth !== undefined, wantsChat = b.chatProvider !== undefined || b.chatModel !== undefined;
+        if (!wantsName && !wantsBudget && !wantsChat) return json(res, 400, { error: "rien à modifier" });
+        const a = access(user, og[1], wantsName || wantsChat ? "org:rename" : "org:budget");
         if (typeof a === "string") return denyAccess(res, a);
         const ctx = { orgId: og[1], userId: user.id, ip: clientIp(req) };
         if (wantsName) {
@@ -198,6 +210,14 @@ export function createApp() {
         if (wantsBudget) {
           const v = b.budgetUsdMonth;
           if (!(v === null || (typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 1e6))) return json(res, 400, { error: "budget invalide (nombre ≥ 0, ou null pour illimité)" });
+        }
+        if (wantsChat) {
+          const cur = getOrg(og[1])!;
+          const provider = b.chatProvider === undefined ? cur.chat_provider : b.chatProvider, model = b.chatModel === undefined ? cur.chat_model : b.chatModel;
+          if (provider !== null && !(CHAT_PROVIDERS as readonly string[]).includes(provider)) return json(res, 400, { error: "fournisseur invalide" });
+          if (model !== null && !(typeof model === "string" && /^[A-Za-z0-9._:/-]{1,100}$/.test(model))) return json(res, 400, { error: "identifiant de modèle invalide" });
+          setOrgChat(og[1], provider, model);
+          audit(ctx, "org.chat_set", { type: "org", id: og[1] }, { provider, model });
         }
         if (wantsName) { const from = getOrg(og[1])!.name; renameOrg(og[1], b.name.trim()); audit(ctx, "org.rename", { type: "org", id: og[1] }, { from, to: b.name.trim() }); }
         if (wantsBudget) { setOrgBudget(og[1], b.budgetUsdMonth); audit(ctx, "org.budget_set", { type: "org", id: og[1] }, { budgetUsdMonth: b.budgetUsdMonth }); }
@@ -216,7 +236,7 @@ export function createApp() {
       }
 
       // ---- ressources d'une organisation : /api/orgs/:org/...
-      const o = /^\/api\/orgs\/([0-9a-f]{16})\/(projects|tasks|secrets|members|invitations|audit|stats|usage|knowledge)(?:\/([0-9a-f]{8,16}|preview))?(\/events|\/cancel|\/retry|\/verify)?$/.exec(url.pathname);
+      const o = /^\/api\/orgs\/([0-9a-f]{16})\/(projects|tasks|secrets|members|invitations|audit|stats|usage|knowledge|conversations)(?:\/([0-9a-f]{8,16}|preview))?(\/events|\/cancel|\/retry|\/verify|\/chat|\/messages)?$/.exec(url.pathname);
       if (o) {
         const [, orgId, kind, itemId, sub] = o;
         const deny = (a: Access) => a === "not_found" ? json(res, 404, { error: "introuvable" }) : json(res, 403, { error: "droits insuffisants" });
@@ -450,6 +470,81 @@ export function createApp() {
           }
         }
 
+        // ---------------- conversations : une fenêtre, deux modes (discuter avec l'assistant, ou lancer une tâche)
+        if (kind === "conversations") {
+          if (!itemId) {
+            if (req.method === "GET") {
+              const a = gate("conversation:read");
+              if (typeof a === "string") return deny(a);
+              const sp = url.searchParams, num = (k: string) => { const v = sp.get(k); return v !== null && v !== "" && Number.isFinite(Number(v)) ? Number(v) : undefined; };
+              const mode = sp.get("mode");
+              const page = listConversations(orgId, user.id, { mode: mode === "chat" || mode === "task" ? mode : undefined, project: sp.get("project") || undefined, q: (sp.get("q") ?? "").slice(0, 100).trim() || undefined, limit: num("limit"), offset: num("offset") });
+              return json(res, 200, { ...page, items: page.items.map(conversationJson) });
+            }
+            if (req.method === "POST") {
+              const { mode, projectId, text, parentId } = await body(req);
+              if (mode !== "chat" && mode !== "task") return json(res, 400, { error: "mode invalide (chat ou task)" });
+              const a = gate(mode === "chat" ? "chat:use" : "task:create");
+              if (typeof a === "string") return deny(a);
+              const row = typeof projectId === "string" ? getProjectInOrg(projectId, orgId) : undefined;
+              if (projectId != null && !row) return json(res, 400, { error: "projet introuvable" });
+              if (parentId != null && (typeof parentId !== "string" || !getConversationFor(parentId, orgId, user.id))) return json(res, 400, { error: "conversation d'origine introuvable" });
+              if (mode === "chat") {
+                if (countConversationsOf(orgId, user.id) >= 200) return json(res, 409, { error: "limite de 200 discussions atteinte : supprime-en quelques-unes" });
+                const id = insertConversation({ org_id: orgId, user_id: user.id, project_id: row?.id ?? null, mode: "chat", parent_id: parentId ?? null });
+                log("conversation.create", { type: "conversation", id }, { mode: "chat" });
+                return json(res, 201, { conversation: conversationJson(getConversationFor(id, orgId, user.id)!) });
+              }
+              if (!row) return json(res, 400, { error: "une tâche demande un projet" });
+              if (typeof text !== "string" || !text.trim() || text.length > MAX_MESSAGE_CHARS) return json(res, 400, { error: "demande invalide" });
+              if (overBudget(orgId)) return json(res, 402, { error: "budget mensuel de l'organisation épuisé" });
+              const started = startTask({ orgId, userId: user.id, project: row, prompt: text.trim(), parentConversationId: parentId ?? null });
+              log("task.create", { type: "task", id: started.taskId }, { project: row.name, from: parentId ? "conversation" : undefined });
+              return json(res, 201, { conversation: conversationJson(getConversationFor(started.conversationId, orgId, user.id)!), taskId: started.taskId });
+            }
+          } else {
+            const a = gate("conversation:read");
+            if (typeof a === "string") return deny(a);
+            const conv = getConversationFor(itemId, orgId, user.id); // une discussion d'un autre est INTROUVABLE, même pour un administrateur
+            if (!conv) return json(res, 404, { error: "introuvable" });
+            if (req.method === "GET" && !sub) return json(res, 200, { conversation: conversationJson(conv), messages: getMessages(conv.id).map(toUIMessage), task: conv.task_id ? getTaskDetail(conv.task_id, orgId) ?? null : null });
+            if (req.method === "PATCH" && !sub) {
+              const { title } = await body(req);
+              if (typeof title !== "string" || !title.trim() || title.trim().length > 120) return json(res, 400, { error: "titre invalide (1 à 120 caractères)" });
+              if (conv.user_id !== user.id && !(conv.mode === "task" && can(a.role, "task:cancel_any"))) return json(res, 403, { error: "droits insuffisants" });
+              setConversationTitle(conv.id, title.trim());
+              return json(res, 200, conversationJson(getConversationFor(conv.id, orgId, user.id)!));
+            }
+            if (req.method === "DELETE" && !sub) {
+              if (conv.mode === "task") return json(res, 409, { error: "une tâche et son historique ne se suppriment pas" });
+              if (conv.user_id !== user.id) return json(res, 403, { error: "droits insuffisants" });
+              deleteConversation(conv.id, orgId);
+              log("conversation.delete", { type: "conversation", id: conv.id }, { mode: "chat" });
+              return json(res, 200, { ok: true });
+            }
+            if (req.method === "POST" && sub === "/chat") {
+              const c = gate("chat:use");
+              if (typeof c === "string") return deny(c);
+              if (conv.mode !== "chat") return json(res, 400, { error: "cette conversation est une tâche : écris-lui un message pour demander un ajustement" });
+              if (conv.user_id !== user.id) return json(res, 403, { error: "droits insuffisants" });
+              if (chatLimiter.blocked(`chat:${user.id}`)) return json(res, 429, { error: "trop de messages en peu de temps, réessaie dans un instant" });
+              chatLimiter.fail(`chat:${user.id}`); // chaque message compte, réussi ou non
+              if (overBudget(orgId)) return json(res, 402, { error: "budget mensuel de l'organisation épuisé" });
+              const b = await body(req);
+              const regenerate = b.trigger === "regenerate-message";
+              const last = Array.isArray(b.messages) ? b.messages[b.messages.length - 1] : undefined;
+              const text = regenerate ? null : textOf({ parts: last?.role === "user" && Array.isArray(last.parts) ? last.parts : [] });
+              if (!regenerate && (!text || text.length > MAX_MESSAGE_CHARS)) return json(res, 400, { error: "message vide ou trop long" });
+              if (countMessages(conv.id) >= MAX_MESSAGES) return json(res, 409, { error: "cette discussion est trop longue : ouvre-en une nouvelle" });
+              const ac = new AbortController();
+              res.on("close", () => { if (!res.writableEnded) ac.abort(); }); // le bouton « Arrêter » ferme la connexion
+              const err = await runChat({ res, conv, orgId, text, signal: ac.signal });
+              if (err) return json(res, err.status, { error: err.error });
+              return;
+            }
+          }
+        }
+
         // ---------------- tâches
         if (kind === "tasks" && !itemId) {
           if (req.method === "GET") {
@@ -471,11 +566,8 @@ export function createApp() {
             const row = typeof project === "string" ? getProjectInOrg(project, orgId) : undefined; // le projet doit être CELUI de l'organisation
             if (!row || typeof prompt !== "string" || !prompt.trim()) return json(res, 400, { error: "projet ou demande invalide" });
             if (overBudget(orgId)) return json(res, 402, { error: "budget mensuel de l'organisation épuisé" });
-            const id = newId();
-            createTask(id, orgId, user.id, row.id, prompt.trim());
-            addEvent(id, "step", "Demande reçue, en file d'attente.");
+            const { taskId: id } = startTask({ orgId, userId: user.id, project: row, prompt: prompt.trim() });
             log("task.create", { type: "task", id }, { project: row.name });
-            enqueue(id);
             return json(res, 201, getTaskDetail(id, orgId));
           }
         }
@@ -501,9 +593,7 @@ export function createApp() {
             const row = getProjectInOrg(task.project, orgId);
             if (!row) return json(res, 400, { error: "le projet de cette tâche n'existe plus" });
             if (overBudget(orgId)) return json(res, 402, { error: "budget mensuel de l'organisation épuisé" });
-            const nid = newId();
-            createTask(nid, orgId, user.id, row.id, task.prompt);
-            addEvent(nid, "step", `Relance de la tâche ${task.id}. En file d'attente.`);
+            const { taskId: nid } = startTask({ orgId, userId: user.id, project: row, prompt: task.prompt, note: `Relance de la tâche ${task.id}. En file d'attente.` });
             log("task.retry", { type: "task", id: nid }, { from: task.id, project: row.name });
             enqueue(nid);
             return json(res, 201, getTaskDetail(nid, orgId));
