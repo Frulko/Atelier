@@ -85,6 +85,13 @@ curl -sf -b "$S/jar5" $U/api/me | grep -q '"role":"member"' || fail "le nouveau 
 [ "$(code -b "$S/jar5" $O/members)" = 403 ] || fail "un membre peut lister les membres"
 [ "$(code -b "$S/jar5" $O/tasks)" = 200 ] || fail "le nouveau membre ne voit pas les tâches"
 
+# 4c. Interface web pilotée dans un vrai navigateur (si Playwright est installé : pip install playwright)
+if python3 -c "import playwright" 2>/dev/null; then
+  python3 scripts/ui_check.py "http://localhost:18080" admin@localhost smoke || fail "le test de l'interface a échoué"
+else
+  echo "test de l'interface ignoré (pip install playwright pour l'activer)"
+fi
+
 # 5. Mot de passe : changer le mot de passe déconnecte les AUTRES appareils, pas celui-ci
 [ "$(login "$S/jar2" smoke)" = 200 ] || fail "2e appareil : connexion refusée"
 [ "$(code "${A[@]}" $U/api/auth/password -d '{"current":"faux","next":"nouveau-mdp-123"}')" = 403 ] || fail "changement accepté avec un mauvais mot de passe actuel"

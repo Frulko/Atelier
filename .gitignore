@@ -3,3 +3,4 @@
 .smoke/
 node_modules/
 *.db
+.smoke-shots/
