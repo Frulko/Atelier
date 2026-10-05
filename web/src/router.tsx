@@ -9,6 +9,7 @@ import { AuditPage } from "./features/audit/AuditPage";
 import { InvitePage } from "./features/auth/InvitePage";
 import { LoginPage } from "./features/auth/LoginPage";
 import { IntegrationsPage } from "./features/integrations/IntegrationsPage";
+import { ConversationPage, ConversationsPage } from "./features/conversations/ConversationPages";
 import { KnowledgePage } from "./features/knowledge/KnowledgePage";
 import { OrgSettingsPage } from "./features/org/OrgSettingsPage";
 import { OverviewPage } from "./features/overview/OverviewPage";
@@ -78,6 +79,11 @@ const tasksRoute = createRoute({
   validateSearch: (s: Record<string, unknown>) => compact({ status: str(s.status), project: str(s.project), user: str(s.user), q: str(s.q), from: str(s.from), to: str(s.to), page: pageNo(s.page) }),
 });
 const taskRoute = createRoute({ getParentRoute: () => orgRoute, path: "tasks/$taskId", component: TaskDetailPage });
+const conversationsRoute = child("conversations", ConversationsPage);
+const conversationRoute = createRoute({
+  getParentRoute: () => orgRoute, path: "conversations/$conversationId", component: ConversationPage,
+  validateSearch: (s: Record<string, unknown>) => compact({ first: str(s.first) }),
+});
 const projectsRoute = child("projects", ProjectsPage);
 const projectRoute = createRoute({ getParentRoute: () => orgRoute, path: "projects/$projectId", component: ProjectDetailPage });
 const knowledgeRoute = child("knowledge", KnowledgePage);
@@ -93,7 +99,7 @@ const accountRoute = child("account", AccountPage);
 
 const routeTree = rootRoute.addChildren([
   loginRoute, inviteRoute, indexRoute,
-  orgRoute.addChildren([overviewRoute, tasksRoute, taskRoute, projectsRoute, projectRoute, knowledgeRoute, teamRoute, integrationsRoute, usageRoute, auditRoute, settingsRoute, accountRoute]),
+  orgRoute.addChildren([overviewRoute, conversationsRoute, conversationRoute, tasksRoute, taskRoute, projectsRoute, projectRoute, knowledgeRoute, teamRoute, integrationsRoute, usageRoute, auditRoute, settingsRoute, accountRoute]),
 ]);
 
 export const router = createRouter({ routeTree, context: { queryClient: undefined as unknown as QueryClient }, defaultPreload: "intent", scrollRestoration: true });

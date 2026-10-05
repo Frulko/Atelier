@@ -63,3 +63,11 @@ export interface KnowledgePreview {
 
 export interface Session { id: string; createdAt: number; lastUsedAt: number; expiresAt: number; userAgent: string | null; ip: string | null; current: boolean }
 export interface Activity { id: number; ts: number; action: string; orgId: string | null; orgName: string | null; meta: Record<string, unknown> | null; ip: string | null }
+
+export interface Conversation {
+  id: string; mode: "chat" | "task"; title: string; projectId: string | null; projectName: string | null; userId: string; userEmail: string | null;
+  taskId: string | null; parentId: string | null; messageCount: number; preview: string; createdAt: number; updatedAt: number;
+}
+export interface ConversationPage { items: Conversation[]; total: number; limit: number; offset: number }
+export interface ChatSource { id: string; title: string }
+export interface ConversationDetail { conversation: Conversation; messages: import("ai").UIMessage<{ sources?: ChatSource[]; model?: string }>[]; task: Task | null }

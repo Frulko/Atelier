@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, Outlet, useNavigate } from "@tanstack/react-router";
 import clsx from "clsx";
-import { BarChart3, BookOpen, FolderGit2, LayoutDashboard, ListChecks, LogOut, Menu, Plug, ScrollText, Settings, Users, X, type LucideIcon } from "lucide-react";
+import { BarChart3, BookOpen, FolderGit2, MessagesSquare, LayoutDashboard, ListChecks, LogOut, Menu, Plug, ScrollText, Settings, Users, X, type LucideIcon } from "lucide-react";
 import { useState } from "react";
 import { api } from "../../lib/api";
 import { meQuery } from "../../lib/queries";
@@ -13,6 +13,7 @@ import { OrgSwitcher } from "./OrgSwitcher";
 type Item = { to: string; label: string; icon: LucideIcon; admin?: boolean; exact?: boolean };
 const ITEMS: Item[] = [
   { to: "/o/$orgId", label: "Vue d'ensemble", icon: LayoutDashboard, exact: true },
+  { to: "/o/$orgId/conversations", label: "Conversations", icon: MessagesSquare },
   { to: "/o/$orgId/tasks", label: "Tâches", icon: ListChecks },
   { to: "/o/$orgId/projects", label: "Projets", icon: FolderGit2 },
   { to: "/o/$orgId/knowledge", label: "Connaissances", icon: BookOpen },

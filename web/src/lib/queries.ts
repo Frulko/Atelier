@@ -1,7 +1,7 @@
 import { QueryClient, queryOptions, keepPreviousData } from "@tanstack/react-query";
 import { api, ApiError, qs } from "./api";
 import type {
-  KnowledgeBrief, KnowledgeItem,
+  ConversationDetail, ConversationPage, KnowledgeBrief, KnowledgeItem,
   Activity, AuditFilters, AuditPage, Invitation, Me, Member, OrgDetail, Project, Secret, Session, Stats, Task, TaskFilters, TaskPage, Usage,
 } from "./types";
 import { isActive } from "./labels";
@@ -67,3 +67,13 @@ export const invalidateOrg = (o: string, ...parts: string[]) =>
 
 /** Recharge l'identité de force (et pas seulement « marquer périmée ») : le routeur lit ce cache pour décider où envoyer la personne. */
 export const refreshMe = (qc: QueryClient) => qc.fetchQuery({ ...meQuery, staleTime: 0 });
+
+export const conversationsQuery = (o: string, mode?: string) => queryOptions({
+  queryKey: ["org", o, "conversations", mode ?? "all"],
+  queryFn: () => api.get<ConversationPage>(`${org(o)}/conversations${qs({ mode, limit: 100 })}`),
+});
+export const conversationQuery = (o: string, id: string) => queryOptions({
+  queryKey: ["org", o, "conversation", id],
+  queryFn: () => api.get<ConversationDetail>(`${org(o)}/conversations/${id}`),
+  staleTime: 0,
+});

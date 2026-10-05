@@ -153,6 +153,26 @@ with sync_playwright() as p:
     admin.get_by_role("button", name="Tester").click()
     expect(admin.get_by_test_id("knowledge-preview")).to_contain_text("1 connaissance donnée")  # what the assistant would know
     shot(admin, "05b-knowledge")
+    # ---------------------------------------------------------- conversations
+    nav(admin, "Conversations")
+    admin.get_by_role("button", name="Nouvelle conversation").first.click()
+    dlg = admin.get_by_role("dialog")
+    dlg.get_by_role("radio", name="Discuter").click()
+    dlg.get_by_label("Première question (facultatif)").fill(f"Quel ton pour la page Contact {RUN} ?")
+    dlg.get_by_role("button", name="Démarrer").click()
+    expect(admin.get_by_text("Réponse factice").first).to_be_visible()                      # streamed by the fake model
+    expect(admin.get_by_text(f"charte-{RUN}").first).to_be_visible()                        # shown as a source
+    expect(admin.get_by_role("button", name="Copier")).to_be_visible()                      # the first answer is complete
+    admin.get_by_label("Ton message").fill("Et pour les horaires ?")
+    admin.get_by_label("Ton message").press("Enter")
+    expect(admin.get_by_text("Et pour les horaires ?").first).to_be_visible()
+    expect(admin.get_by_text("Réponse factice")).to_have_count(2)
+    shot(admin, "05c-conversation")
+    nav(admin, "Conversations")
+    expect(admin.get_by_text(f"Quel ton pour la page Contact {RUN}").first).to_be_visible()
+    nav(admin, "Connaissances")
+    item = admin.get_by_role("listitem").filter(has_text=f"charte-{RUN}")
+
     item.get_by_role("button", name="Désactiver").click()
     expect(item.get_by_text("Désactivée")).to_be_visible()
     admin.get_by_role("button", name="Tester").click()
