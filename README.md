@@ -66,6 +66,7 @@ Read **[Security → known limitations](docs/security.md#known-limitations)** be
 | [Testing](docs/testing.md) | How to run the checks, what is and is not covered |
 | [Roadmap](docs/roadmap.md) | Milestones and the path to a multi-tenant SaaS |
 | [Web application design](docs/ui-design.md) | The full SaaS interface: pages, stack, backend additions, phases |
+| [Conversations, knowledge and the tour](docs/conversations-design.md) | One window for discussing and for tasks, a knowledge base, and a guided tour built on a use case |
 
 Contributing with an AI assistant or by hand? Start with **[CLAUDE.md](CLAUDE.md)**.
 
