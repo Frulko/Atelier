@@ -75,4 +75,4 @@ atelier/
 
 ## Diagrams
 
-The images in `docs/img/` are generated from the Mermaid sources in `docs/diagrams/` with `scripts/diagrams.sh`. Edit the source, regenerate, commit both.
+The images in `docs/img/` are generated (PNG and SVG) from the diagram-design HTML/SVG sources in `docs/diagrams/` with `scripts/diagrams.sh` (needs `pip install playwright` and Chrome). Edit the source, regenerate, commit both.

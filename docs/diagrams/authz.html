@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Authorization flow</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root { --color-paper:#f5f5f5; --color-ink:#2d3142; --color-muted:#4f5d75; --color-accent:#eb6c36;
+      --font-sans:'Geist', system-ui, sans-serif; --font-serif:'Instrument Serif', serif; --font-mono:'Geist Mono', ui-monospace, monospace; }
+    body { font-family:var(--font-sans); background:var(--color-paper); color:var(--color-ink); min-height:100vh; display:flex; align-items:center; justify-content:center; padding:3rem 2rem; }
+    .frame { max-width:1200px; width:100%; }
+    .eyebrow { font-family:var(--font-mono); font-size:0.66rem; font-weight:500; letter-spacing:0.18em; text-transform:uppercase; color:var(--color-muted); margin-bottom:0.5rem; }
+    h1 { font-family:var(--font-serif); font-size:clamp(1.5rem, 2.4vw + 0.75rem, 2rem); font-weight:400; letter-spacing:-0.02em; line-height:1.15; color:var(--color-ink); margin-bottom:1.5rem; }
+    svg { width:100%; min-width:900px; display:block; }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Flowchart · Atelier</p>
+    <h1>Authorization flow</h1>
+    <svg viewBox="0 56 1000 304" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="authz-title authz-desc">
+      <title id="authz-title">Authorization flow</title>
+      <desc id="authz-desc">Flowchart of the four checks an organization API request passes — session, membership, role, resource scope — and the 401, 404 or 403 each failure returns.</desc>
+      <defs>
+        <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+        <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+      </defs>
+      <rect width="100%" height="100%" fill="#f5f5f5"/>
+      <line x1="144" y1="120" x2="176" y2="120" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <line x1="304" y1="120" x2="344" y2="120" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <line x1="240" y1="160" x2="240" y2="232" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <line x1="472" y1="120" x2="512" y2="120" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <line x1="408" y1="160" x2="408" y2="232" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <line x1="640" y1="120" x2="680" y2="120" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <line x1="576" y1="160" x2="576" y2="232" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <line x1="808" y1="120" x2="848" y2="120" stroke="#eb6c36" stroke-width="1.2" marker-end="url(#arrow-accent)"/>
+      <line x1="744" y1="160" x2="744" y2="232" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <rect x="310" y="100" width="28" height="12" rx="2" fill="#f5f5f5"/><text x="324" y="109" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">YES</text>
+      <rect x="248" y="188" width="24" height="12" rx="2" fill="#f5f5f5"/><text x="252" y="197" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">NO</text>
+      <rect x="478" y="100" width="28" height="12" rx="2" fill="#f5f5f5"/><text x="492" y="109" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">YES</text>
+      <rect x="416" y="188" width="24" height="12" rx="2" fill="#f5f5f5"/><text x="420" y="197" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">NO</text>
+      <rect x="646" y="100" width="28" height="12" rx="2" fill="#f5f5f5"/><text x="660" y="109" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">YES</text>
+      <rect x="584" y="188" width="24" height="12" rx="2" fill="#f5f5f5"/><text x="588" y="197" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">NO</text>
+      <rect x="814" y="100" width="28" height="12" rx="2" fill="#f5f5f5"/><text x="828" y="109" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">YES</text>
+      <rect x="752" y="188" width="24" height="12" rx="2" fill="#f5f5f5"/><text x="756" y="197" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">NO</text>
+      <polygon points="176,120 240,80 304,120 240,160" fill="#f5f5f5"/><polygon points="176,120 240,80 304,120 240,160" fill="#fff" stroke="#2d3142" stroke-width="1"/><text x="240" y="118" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Valid</text><text x="240" y="132" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">session?</text>
+      <rect x="176" y="232" width="128" height="48" rx="6" fill="#f5f5f5"/><rect x="176" y="232" width="128" height="48" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/><text x="240" y="252" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">401</text><text x="240" y="268" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">login required</text>
+      <polygon points="344,120 408,80 472,120 408,160" fill="#f5f5f5"/><polygon points="344,120 408,80 472,120 408,160" fill="#fff" stroke="#2d3142" stroke-width="1"/><text x="408" y="118" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Member</text><text x="408" y="132" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">of :org?</text>
+      <rect x="344" y="232" width="128" height="48" rx="6" fill="#f5f5f5"/><rect x="344" y="232" width="128" height="48" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/><text x="408" y="252" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">404</text><text x="408" y="268" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">not found</text>
+      <polygon points="512,120 576,80 640,120 576,160" fill="#f5f5f5"/><polygon points="512,120 576,80 640,120 576,160" fill="#fff" stroke="#2d3142" stroke-width="1"/><text x="576" y="118" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Role allows</text><text x="576" y="132" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">the action?</text>
+      <rect x="512" y="232" width="128" height="48" rx="6" fill="#f5f5f5"/><rect x="512" y="232" width="128" height="48" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/><text x="576" y="252" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">403</text><text x="576" y="268" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">insufficient rights</text>
+      <polygon points="680,120 744,80 808,120 744,160" fill="#f5f5f5"/><polygon points="680,120 744,80 808,120 744,160" fill="#fff" stroke="#2d3142" stroke-width="1"/><text x="744" y="118" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Resource</text><text x="744" y="132" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">in :org?</text>
+      <rect x="680" y="232" width="128" height="48" rx="6" fill="#f5f5f5"/><rect x="680" y="232" width="128" height="48" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/><text x="744" y="252" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">404</text><text x="744" y="268" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">not found</text>
+      <rect x="32" y="96" width="112" height="48" rx="24" fill="#f5f5f5"/><rect x="32" y="96" width="112" height="48" rx="24" fill="rgba(122,131,153,0.10)" stroke="#7a8399" stroke-width="1"/><text x="88" y="116" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle" >Request</text><text x="88" y="130" fill="#4f5d75" font-size="9" font-weight="400" font-family="'Geist Mono', monospace" text-anchor="middle" >org API call</text>
+      <rect x="848" y="96" width="112" height="48" rx="24" fill="#f5f5f5"/><rect x="848" y="96" width="112" height="48" rx="24" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/><text x="904" y="124" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle" >Allowed</text>
+      <line x1="32" y1="316" x2="968" y2="316" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/><text x="32" y="336" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">LEGEND</text><rect x="112" y="326" width="24" height="12" rx="6" fill="rgba(122,131,153,0.10)" stroke="#7a8399"/><text x="144" y="336" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">START</text><polygon points="208,332 220,324 232,332 220,340" fill="#fff" stroke="#2d3142"/><text x="240" y="336" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">CHECK</text><rect x="296" y="326" width="24" height="12" rx="3" fill="rgba(45,49,66,0.05)" stroke="#4f5d75"/><text x="328" y="336" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">REJECTED</text><rect x="408" y="326" width="24" height="12" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36"/><text x="440" y="336" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">ALLOWED</text>
+    </svg>
+  </div>
+</body>
+</html>

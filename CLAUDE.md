@@ -16,7 +16,7 @@ Run from `orchestrator/` unless noted.
 | `npm test` | Unit and HTTP integration tests (`node --test`) |
 | `./scripts/smoke.sh` (repo root) | End-to-end test in Docker, no AI and no API key |
 | `./scripts/demo.sh` (repo root) | Local demo with three fake projects |
-| `./scripts/diagrams.sh` (repo root) | Regenerate `docs/img/*.png` from `docs/diagrams/*.mmd` |
+| `./scripts/diagrams.sh` (repo root) | Regenerate `docs/img/*.png` and `*.svg` from `docs/diagrams/*.html` |
 
 **Definition of done: `npm run check`, `npm test` and `./scripts/smoke.sh` are all green.** Never commit when one fails, and never skip hooks or checks to get a commit through.
 
@@ -37,7 +37,7 @@ Run from `orchestrator/` unless noted.
 - `README.md` stays **short and in English**: pitch, one diagram, quick start, status, links. Detail belongs in `docs/` (architecture, security, multi-tenancy, configuration, deployment, testing, roadmap).
 - Update the docs **in the same change** as the behavior they describe.
 - Be honest about status. `docs/testing.md` lists what is *not* covered; do not claim something works if it was not exercised. The real Claude agent and real GitLab/GitHub calls have never been run.
-- Diagrams are Mermaid sources in `docs/diagrams/`, rendered to `docs/img/` by `scripts/diagrams.sh`. Edit the source, regenerate, commit both.
+- Diagrams are diagram-design HTML/SVG sources in `docs/diagrams/`, rendered to `docs/img/` by `scripts/diagrams.sh`. Edit the source, regenerate, commit both.
 - Existing source comments and some test titles are in French. Leave them unless you are rewriting that code anyway.
 
 ## Rules that protect the security model
