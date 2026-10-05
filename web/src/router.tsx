@@ -9,6 +9,7 @@ import { AuditPage } from "./features/audit/AuditPage";
 import { InvitePage } from "./features/auth/InvitePage";
 import { LoginPage } from "./features/auth/LoginPage";
 import { IntegrationsPage } from "./features/integrations/IntegrationsPage";
+import { KnowledgePage } from "./features/knowledge/KnowledgePage";
 import { OrgSettingsPage } from "./features/org/OrgSettingsPage";
 import { OverviewPage } from "./features/overview/OverviewPage";
 import { ProjectDetailPage } from "./features/projects/ProjectDetailPage";
@@ -79,6 +80,7 @@ const tasksRoute = createRoute({
 const taskRoute = createRoute({ getParentRoute: () => orgRoute, path: "tasks/$taskId", component: TaskDetailPage });
 const projectsRoute = child("projects", ProjectsPage);
 const projectRoute = createRoute({ getParentRoute: () => orgRoute, path: "projects/$projectId", component: ProjectDetailPage });
+const knowledgeRoute = child("knowledge", KnowledgePage);
 const teamRoute = createRoute({ getParentRoute: () => orgRoute, path: "team", component: TeamPage, beforeLoad: adminOnly });
 const integrationsRoute = createRoute({ getParentRoute: () => orgRoute, path: "integrations", component: IntegrationsPage, beforeLoad: adminOnly });
 const usageRoute = createRoute({ getParentRoute: () => orgRoute, path: "usage", component: UsagePage, beforeLoad: adminOnly });
@@ -91,7 +93,7 @@ const accountRoute = child("account", AccountPage);
 
 const routeTree = rootRoute.addChildren([
   loginRoute, inviteRoute, indexRoute,
-  orgRoute.addChildren([overviewRoute, tasksRoute, taskRoute, projectsRoute, projectRoute, teamRoute, integrationsRoute, usageRoute, auditRoute, settingsRoute, accountRoute]),
+  orgRoute.addChildren([overviewRoute, tasksRoute, taskRoute, projectsRoute, projectRoute, knowledgeRoute, teamRoute, integrationsRoute, usageRoute, auditRoute, settingsRoute, accountRoute]),
 ]);
 
 export const router = createRouter({ routeTree, context: { queryClient: undefined as unknown as QueryClient }, defaultPreload: "intent", scrollRestoration: true });

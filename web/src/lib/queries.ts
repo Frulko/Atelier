@@ -1,6 +1,7 @@
 import { QueryClient, queryOptions, keepPreviousData } from "@tanstack/react-query";
 import { api, ApiError, qs } from "./api";
 import type {
+  KnowledgeBrief, KnowledgeItem,
   Activity, AuditFilters, AuditPage, Invitation, Me, Member, OrgDetail, Project, Secret, Session, Stats, Task, TaskFilters, TaskPage, Usage,
 } from "./types";
 import { isActive } from "./labels";
@@ -53,6 +54,9 @@ export const auditQuery = (o: string, f: AuditFilters, page: number, size: numbe
   queryFn: () => api.get<AuditPage>(`${org(o)}/audit${qs({ ...f, limit: size, offset: page * size })}`),
   placeholderData: keepPreviousData,
 });
+
+export const knowledgeQuery = (o: string) => queryOptions({ queryKey: ["org", o, "knowledge"], queryFn: () => api.get<KnowledgeBrief[]>(`${org(o)}/knowledge`) });
+export const knowledgeItemQuery = (o: string, id: string) => queryOptions({ queryKey: ["org", o, "knowledge", id], queryFn: () => api.get<KnowledgeItem>(`${org(o)}/knowledge/${id}`) });
 
 export const sessionsQuery = queryOptions({ queryKey: ["me", "sessions"], queryFn: () => api.get<Session[]>("/api/me/sessions") });
 export const activityQuery = queryOptions({ queryKey: ["me", "activity"], queryFn: () => api.get<Activity[]>("/api/me/activity") });

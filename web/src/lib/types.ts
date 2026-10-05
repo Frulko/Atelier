@@ -50,5 +50,16 @@ export interface AuditItem {
 export interface AuditPage { items: AuditItem[]; total: number; limit: number; offset: number }
 export interface AuditFilters { action?: string; user?: string; q?: string; from?: number; to?: number }
 
+export interface KnowledgeBrief {
+  id: string; projectId: string | null; title: string; excerpt: string; chars: number; enabled: boolean; pinned: boolean;
+  author: string | null; createdAt: number; updatedAt: number;
+}
+export interface KnowledgeItem extends Omit<KnowledgeBrief, "excerpt" | "chars"> { content: string }
+export interface KnowledgePreview {
+  chosen: { id: string; title: string; projectId: string | null; chars: number; pinned: boolean }[];
+  omitted: { id: string; title: string; projectId: string | null; chars: number; pinned: boolean }[];
+  chars: number; budget: number;
+}
+
 export interface Session { id: string; createdAt: number; lastUsedAt: number; expiresAt: number; userAgent: string | null; ip: string | null; current: boolean }
 export interface Activity { id: number; ts: number; action: string; orgId: string | null; orgName: string | null; meta: Record<string, unknown> | null; ip: string | null }

@@ -10,6 +10,7 @@ The backend must run with the fake agent and the demo projects (smoke.sh and dem
 import os
 import re
 import sys
+import tempfile
 import time
 
 from playwright.sync_api import expect, sync_playwright
@@ -132,6 +133,35 @@ with sync_playwright() as p:
     expect(admin.get_by_text(SECRET_VALUE[-4:]).first).to_be_visible()                     # only the hint
     assert SECRET_VALUE not in admin.content(), "the secret value is visible in the page"
     shot(admin, "06-integrations")
+
+    # -------------------------------------------------------------- knowledge
+    nav(admin, "Connaissances")
+    admin.get_by_role("button", name="Nouvelle connaissance").first.click()
+    dlg = admin.get_by_role("dialog")
+    with tempfile.NamedTemporaryFile("w", suffix=".md", prefix=f"charte-{RUN}-", delete=False, encoding="utf-8") as f:
+        f.write("# Ton et couleurs\n\n- Ton chaleureux, tutoiement.\n- Couleurs : crème et brun.\n")
+        charte = f.name
+    dlg.get_by_label("Importer un fichier").set_input_files(charte)                       # import a markdown file
+    expect(dlg.get_by_label("Titre")).to_have_value(re.compile(f"charte-{RUN}"))           # the title comes from the file name
+    expect(dlg.get_by_label("Contenu")).to_have_value(re.compile("Ton chaleureux"))
+    dlg.get_by_role("tab", name="Aperçu").click()
+    expect(dlg.get_by_text("Ton et couleurs")).to_be_visible()                              # markdown preview
+    dlg.get_by_role("button", name="Enregistrer").click()
+    item = admin.get_by_role("listitem").filter(has_text=f"charte-{RUN}")
+    expect(item).to_be_visible()
+    admin.get_by_label("Une demande ou une question").fill("quelle charte pour la page Contact ?")
+    admin.get_by_role("button", name="Tester").click()
+    expect(admin.get_by_test_id("knowledge-preview")).to_contain_text("1 connaissance donnée")  # what the assistant would know
+    shot(admin, "05b-knowledge")
+    item.get_by_role("button", name="Désactiver").click()
+    expect(item.get_by_text("Désactivée")).to_be_visible()
+    admin.get_by_role("button", name="Tester").click()
+    expect(admin.get_by_test_id("knowledge-preview")).to_contain_text("Rien")                  # disabled: not given any more
+    rm_k = item.get_by_role("button", name=re.compile("Supprimer|Confirmer"))
+    rm_k.click()
+    rm_k.click()
+    expect(admin.get_by_role("listitem").filter(has_text=f"charte-{RUN}")).to_have_count(0)
+    os.unlink(charte)
 
     # ------------------------------------------------------------------- team
     nav(admin, "Équipe")
