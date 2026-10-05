@@ -5,7 +5,7 @@ name: atelier
 services:
   orchestrator:
     build: ./orchestrator
-    container_name: atelier-orchestrator   # nom DNS vu par les bacs à sable (proxy)
+    container_name: ${ATELIER_CONTAINER:-atelier-orchestrator}   # nom DNS vu par les bacs à sable (proxy)
     restart: unless-stopped
     environment:
       ATELIER_PASSWORD: ${ATELIER_PASSWORD:?mot de passe initial du compte propriétaire}
@@ -20,6 +20,8 @@ services:
       ATELIER_MASTER_KEY: ${ATELIER_MASTER_KEY:-}            # base64 de 32 octets ; sinon générée dans le volume data
       ATELIER_ALLOW_LOCAL_REPOS: ${ATELIER_ALLOW_LOCAL_REPOS:-}  # 1 : accepte des dépôts locaux (tests/démo seulement)
       ATELIER_GIT_HOSTS: ${ATELIER_GIT_HOSTS:-}              # liste blanche d'hôtes git (vide = tous)
+      PROXY_URL: http://${ATELIER_CONTAINER:-atelier-orchestrator}:8081
+      SANDBOX_NETWORK: ${ATELIER_SANDBOX_NET:-atelier-sandbox}
       ATELIER_WORKDIR: ${ATELIER_WORKDIR:-/srv/atelier/work}
       ATELIER_FAKE_AGENT: ${ATELIER_FAKE_AGENT:-}
       MAX_BUDGET_USD: ${MAX_BUDGET_USD:-2}
@@ -46,5 +48,5 @@ volumes:
 networks:
   # Réseau SANS Internet : les bacs à sable n'y joignent que le proxy de l'orchestrateur.
   sandbox:
-    name: atelier-sandbox
+    name: ${ATELIER_SANDBOX_NET:-atelier-sandbox}
     internal: true
