@@ -1,0 +1,51 @@
+# Testing
+
+Three commands. All three must be green before a commit.
+
+| Command | Where | What it does | Needs |
+|---|---|---|---|
+| `npm run check` | `orchestrator/` | Type-checks the TypeScript (`tsc --noEmit`) | Node |
+| `npm test` | `orchestrator/` | Unit and HTTP integration tests (`node --test`), in-memory database | Node |
+| `./scripts/smoke.sh` | repo root | End-to-end test of the whole stack in Docker, **no AI, no API key** | Docker |
+
+## What is covered
+
+| Area | Covered by |
+|---|---|
+| Password hashing (correct/wrong, salts, hostile or corrupt hashes, length limits) | `auth.test.ts` |
+| First owner account created once, with its organization | `auth.test.ts` |
+| Sessions: stored hashed, expiry, sliding renewal, logout, revoking other devices, cookie attributes | `session.test.ts` |
+| Login rate limiter | `session.test.ts`, `smoke.sh` (429 after 5 failures) |
+| **Isolation between organizations**: 404 on every foreign resource (list, task, stream, cancel, create), forged ids refused | `isolation.test.ts` (real HTTP server, five users, two organizations) |
+| Roles: viewer / member / admin permissions, cancel own vs anyone's | `isolation.test.ts` |
+| Secrets API: value never returned, ciphertext not in the database, roles, cross-organization references refused | `resources.test.ts` |
+| Projects API: hostile repositories refused, duplicate slug, delete rules | `resources.test.ts`, `projects.test.ts` |
+| Vault: round trip, tampering, ciphertext moved to another organization or secret, master key file | `vault.test.ts` |
+| One-time import of the legacy configuration | `legacy-import.test.ts` |
+| 401 without a session, login, CSRF (403), password change revoking other devices, logout | `smoke.sh` |
+| Clone → sandbox → check → **fix loop** → commit → push → cleanup, with several projects | `smoke.sh` |
+
+## What is *not* covered yet
+
+- The **real Claude agent** inside the sandbox (proxy + SDK end to end). Only the fake agent runs in tests.
+- A **real GitLab merge request** and a **real GitHub pull request**. Code exists; it has only run against local git repositories.
+- Task **cancellation while an agent is running**.
+- The **browser UI**: its script is syntax-checked, but the pages have not been driven in a browser.
+- Docker-level isolation guarantees (resource limits, dropped capabilities) are configured but not asserted.
+
+## The fake agent and the fake projects
+
+To test without any AI, the sandbox can run a **deterministic fake agent** (`ATELIER_FAKE_AGENT=1`), and `fixtures/projects/` holds three small projects turned into local bare git repositories by `scripts/fixtures.sh`.
+
+| Request contains | The fake agent… | You observe |
+|---|---|---|
+| anything | appends a line to `NOTES.md` | task finishes, branch `atelier/<id>` pushed |
+| **"casse"** | also writes an invalid file | the check fails, the agent is re-run with the error, removes the file, the task finishes (fix loop) |
+
+`./scripts/demo.sh` starts this setup for you to click through.
+
+## Writing tests
+
+- Every new route that touches organization data needs an **isolation test** in the style of `isolation.test.ts`.
+- Tests must not need Docker or Internet access; use the in-memory database (`DB_FILE=:memory:`). Anything that needs Docker belongs in `smoke.sh`.
+- Set the environment variables *before* dynamically importing the modules: configuration is read at import time.

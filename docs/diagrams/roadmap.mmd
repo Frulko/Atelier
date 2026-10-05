@@ -1,0 +1,24 @@
+%%{init: {'theme':'base','flowchart':{'curve':'basis','nodeSpacing':30,'rankSpacing':42,'htmlLabels':true},'themeVariables':{'fontFamily':'ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif','fontSize':'14px','lineColor':'#64748b','edgeLabelBackground':'#ffffff','clusterBkg':'#f8fafc','clusterBorder':'#cbd5e1'}}}%%
+flowchart TB
+    subgraph done["✅  Done"]
+        direction LR
+        M1["<b>M1</b><br/>pipeline · sandbox<br/>check · MR / PR"]:::done --> U1["<b>U1</b><br/>accounts"]:::done --> U2["<b>U2</b><br/>sessions · CSRF<br/>rate limit"]:::done --> U3["<b>U3</b><br/>organizations<br/>roles · isolation"]:::done --> U4["<b>U4</b><br/>vault<br/>projects in DB"]:::done
+    end
+    subgraph upcoming["🚧  Next, then planned"]
+        direction LR
+        U5["<b>U5</b><br/>per-org model keys<br/>task tokens · budgets"]:::next --> U6["<b>U6</b><br/>invitations<br/>management UI"]:::next --> M2["<b>M2</b><br/>real agent validated<br/>previews · QA agent"]:::plan --> M3["<b>M3</b><br/>release button<br/>audit log · rollback"]:::plan --> M4["<b>M4</b><br/>reviewer agent<br/>protected paths block"]:::plan --> SaaS["<b>SaaS</b><br/>OIDC · quotas<br/>microVM isolation"]:::plan
+    end
+    done ~~~ upcoming
+
+    classDef human fill:#faf5ff,stroke:#9333ea,stroke-width:2px,color:#3b0764
+    classDef trust fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#064e3b
+    classDef danger fill:#fef2f2,stroke:#dc2626,stroke-width:2px,color:#7f1d1d
+    classDef ext fill:#eff6ff,stroke:#2563eb,stroke-width:2px,color:#1e3a8a
+    classDef good fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#064e3b
+    classDef warn fill:#fffbeb,stroke:#d97706,stroke-width:2px,color:#78350f
+    classDef bad fill:#fef2f2,stroke:#dc2626,stroke-width:2px,color:#7f1d1d
+    classDef done fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#064e3b
+    classDef next fill:#fff7ed,stroke:#ea580c,stroke-width:2px,color:#7c2d12
+    classDef plan fill:#f8fafc,stroke:#94a3b8,stroke-width:2px,stroke-dasharray:5 3,color:#334155
+    style done fill:#f0fdf4,stroke:#86efac,color:#14532d
+    style upcoming fill:#fff7ed,stroke:#fdba74,color:#7c2d12

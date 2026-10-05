@@ -1,0 +1,30 @@
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif','fontSize':'14px','actorBkg':'#faf5ff','actorBorder':'#9333ea','actorTextColor':'#3b0764','actorLineColor':'#cbd5e1','signalColor':'#475569','signalTextColor':'#1e293b','noteBkgColor':'#fffbeb','noteBorderColor':'#d97706','noteTextColor':'#78350f','labelBoxBkgColor':'#eff6ff','labelBoxBorderColor':'#2563eb','labelTextColor':'#1e3a8a','loopTextColor':'#1e3a8a','activationBkgColor':'#ecfdf5','sequenceNumberColor':'#ffffff'}}}%%
+sequenceDiagram
+    autonumber
+    actor U as 👤 Teammate
+    participant UI as 💬 Chat
+    participant O as ⚙️ Orchestrator
+    participant S as 📦 Sandbox
+    participant G as 🦊 Git forge
+
+    U->>UI: "add a volume discount to Travel"
+    UI->>O: POST /api/orgs/:org/tasks
+    Note over O: session → membership → role check
+    O->>G: git clone (token injected in memory only)
+    O->>O: move .git out of the agent's sight
+    O->>S: docker run (working tree mounted, no secret)
+    loop the agent works
+        S-->>O: JSON events (text, tool calls)
+        O-->>UI: live stream (SSE)
+    end
+    rect rgb(236, 253, 245)
+        O->>S: run the check command (no network)
+        alt the check fails (3 attempts max)
+            O->>S: re-run the agent with the error output
+        end
+    end
+    O->>G: commit + push branch atelier/‹id›
+    O->>G: open the MR / PR (flagged if a protected path changed)
+    O-->>UI: ready: link to the proposal
+    U->>G: review, test, merge
+    O->>O: delete the working directory

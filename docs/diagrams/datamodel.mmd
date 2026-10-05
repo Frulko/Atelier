@@ -1,0 +1,28 @@
+%%{init: {'theme':'base','flowchart':{'curve':'basis','nodeSpacing':30,'rankSpacing':42,'htmlLabels':true},'themeVariables':{'fontFamily':'ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif','fontSize':'14px','lineColor':'#64748b','edgeLabelBackground':'#ffffff','clusterBkg':'#f8fafc','clusterBorder':'#cbd5e1'}}}%%
+flowchart LR
+    user(["👤 <b>User</b><br/>email · password<br/><i>scrypt hash</i>"]):::human
+    org{{"🏢 <b>Organization</b><br/>the isolation boundary"}}:::warn
+    projects["📁 <b>Projects</b><br/>https repo · forge · branch<br/>check command · protected paths"]:::ext
+    secrets[("🔐 <b>Secrets</b><br/>git tokens · model keys<br/><i>AES-256-GCM, never returned</i>")]:::trust
+    tasks["🧾 <b>Tasks</b><br/>prompt · status · cost<br/>branch · MR / PR link"]:::ext
+    events["📜 <b>Events</b><br/>live log of a task"]:::ext
+
+    user -->|"member with a role<br/><b>owner · admin · member · viewer</b>"| org
+    org -->|owns| projects
+    org -->|owns| secrets
+    org -->|scopes| tasks
+    projects -.->|"uses one git token"| secrets
+    projects -->|receives| tasks
+    user -->|requests| tasks
+    tasks -->|emits| events
+
+    classDef human fill:#faf5ff,stroke:#9333ea,stroke-width:2px,color:#3b0764
+    classDef trust fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#064e3b
+    classDef danger fill:#fef2f2,stroke:#dc2626,stroke-width:2px,color:#7f1d1d
+    classDef ext fill:#eff6ff,stroke:#2563eb,stroke-width:2px,color:#1e3a8a
+    classDef good fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#064e3b
+    classDef warn fill:#fffbeb,stroke:#d97706,stroke-width:2px,color:#78350f
+    classDef bad fill:#fef2f2,stroke:#dc2626,stroke-width:2px,color:#7f1d1d
+    classDef done fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#064e3b
+    classDef next fill:#fff7ed,stroke:#ea580c,stroke-width:2px,color:#7c2d12
+    classDef plan fill:#f8fafc,stroke:#94a3b8,stroke-width:2px,stroke-dasharray:5 3,color:#334155
