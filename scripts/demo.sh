@@ -16,6 +16,9 @@ FIXTURES_DIR=$D/fixtures
 PROJECTS_JSON='$(tr -d '\n' < fixtures/projects.json)'
 ENV
 docker compose -p atelier-demo --env-file "$D/.env" -f docker-compose.yml -f docker-compose.fixtures.yml up -d --build
+for _ in $(seq 40); do curl -sf localhost:8080/healthz >/dev/null && break; sleep 1; done
+# Matière réaliste pour les graphiques, le journal et l'usage (idempotent : sans effet si déjà fait).
+docker exec -i atelier-orchestrator node - < scripts/seed-demo.mjs || echo "(amorçage de la démo ignoré)"
 echo "→ http://localhost:8080   (e-mail : admin@localhost · mot de passe : demo)"
 echo "→ voir les branches créées : git --git-dir=$D/fixtures/mini-regie.git branch"
 echo "→ arrêter : docker compose -p atelier-demo --env-file $D/.env -f docker-compose.yml -f docker-compose.fixtures.yml down -v"
