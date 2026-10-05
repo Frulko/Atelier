@@ -1,8 +1,9 @@
 import http from "node:http";
-import { secretUsers, updateSecret, listSessions, deleteSessionByPrefix, setUserName, renameOrg, activeTaskCount, deleteOrgCascade, orgStats, orgUsage, queryAudit, userActivity, getUserById, STATUSES, queryTasks, getTaskDetail, type Status, addEvent, addMember, bus, consumeInvitation, countOrgsOf, countOwners, createOrg, createUser, deleteInvitation, findInvitation, insertInvitation, listInvitations, listMembers, removeMember, setMemberRole, createTask, getOrg, monthSpend, setOrgBudget, deleteProject, deleteSecret, getEvents, getProjectInOrg, getSecretRow, getTask, getTaskInOrg, getUserByEmail, insertProject, listProjects, listSecrets, listTasks, orgsOf, roleOf, secretInUse, updatePassword, updateProject, updateTask, type Evt, type Role, type User } from "./db.ts";
+import { countKnowledge, deleteKnowledge, getKnowledge, insertKnowledge, listKnowledge, updateKnowledge, secretUsers, updateSecret, listSessions, deleteSessionByPrefix, setUserName, renameOrg, activeTaskCount, deleteOrgCascade, orgStats, orgUsage, queryAudit, userActivity, getUserById, STATUSES, queryTasks, getTaskDetail, type Status, addEvent, addMember, bus, consumeInvitation, countOrgsOf, countOwners, createOrg, createUser, deleteInvitation, findInvitation, insertInvitation, listInvitations, listMembers, removeMember, setMemberRole, createTask, getOrg, monthSpend, setOrgBudget, deleteProject, deleteSecret, getEvents, getProjectInOrg, getSecretRow, getTask, getTaskInOrg, getUserByEmail, insertProject, listProjects, listSecrets, listTasks, orgsOf, roleOf, secretInUse, updatePassword, updateProject, updateTask, type Evt, type Role, type User } from "./db.ts";
 import { rotateSecret, storeSecret } from "./vault.ts";
 import { verifyAccess } from "./git.ts";
 import { rowToProject } from "./projects.ts";
+import { KNOWLEDGE_BUDGET, MAX_ITEMS, selectKnowledge, validateKnowledge } from "./knowledge.ts";
 import { audit, auditToCsv } from "./audit.ts";
 import { overBudget } from "./budget.ts";
 import { PROVIDERS } from "./proxy.ts";
@@ -215,12 +216,56 @@ export function createApp() {
       }
 
       // ---- ressources d'une organisation : /api/orgs/:org/...
-      const o = /^\/api\/orgs\/([0-9a-f]{16})\/(projects|tasks|secrets|members|invitations|audit|stats|usage)(?:\/([0-9a-f]{8,16}))?(\/events|\/cancel|\/retry|\/verify)?$/.exec(url.pathname);
+      const o = /^\/api\/orgs\/([0-9a-f]{16})\/(projects|tasks|secrets|members|invitations|audit|stats|usage|knowledge)(?:\/([0-9a-f]{8,16}|preview))?(\/events|\/cancel|\/retry|\/verify)?$/.exec(url.pathname);
       if (o) {
         const [, orgId, kind, itemId, sub] = o;
         const deny = (a: Access) => a === "not_found" ? json(res, 404, { error: "introuvable" }) : json(res, 403, { error: "droits insuffisants" });
         const gate = (action: Action) => access(user, orgId, action);
         const log = (action: string, target?: { type: string; id: string }, meta?: Parameters<typeof audit>[3]) => audit({ orgId, userId: user.id, ip: clientIp(req) }, action, target, meta);
+
+        // ---------------- connaissances : ce que l'équipe a écrit pour l'assistant et l'agent
+        if (kind === "knowledge") {
+          const fullJson = (k: NonNullable<ReturnType<typeof getKnowledge>>) => ({ id: k.id, projectId: k.project_id, title: k.title, content: k.content, enabled: !!k.enabled, pinned: !!k.pinned, author: k.author_email ?? null, createdAt: k.created_at, updatedAt: k.updated_at });
+          if (itemId === "preview" && req.method === "POST") {
+            // « Que saura l'assistant pour cette demande ? » : la même sélection que celle qui sert vraiment
+            const a = gate("knowledge:read");
+            if (typeof a === "string") return deny(a);
+            const { projectId, query } = await body(req);
+            if (projectId != null && (typeof projectId !== "string" || !getProjectInOrg(projectId, orgId))) return json(res, 400, { error: "projet introuvable" });
+            const sel = selectKnowledge(listKnowledge(orgId), projectId ?? null, typeof query === "string" ? query.slice(0, 2000) : "");
+            const brief = (k: { id: string; title: string; project_id: string | null; content: string; pinned: number }) => ({ id: k.id, title: k.title, projectId: k.project_id, chars: k.title.length + k.content.length, pinned: !!k.pinned });
+            return json(res, 200, { chosen: sel.chosen.map(brief), omitted: sel.omitted.map(brief), chars: sel.chars, budget: KNOWLEDGE_BUDGET });
+          }
+          if (req.method === "GET") {
+            const a = gate("knowledge:read");
+            if (typeof a === "string") return deny(a);
+            if (!itemId) return json(res, 200, listKnowledge(orgId).map((k) => ({ id: k.id, projectId: k.project_id, title: k.title, excerpt: k.content.replace(/\s+/g, " ").slice(0, 180), chars: k.content.length, enabled: !!k.enabled, pinned: !!k.pinned, author: k.author_email ?? null, createdAt: k.created_at, updatedAt: k.updated_at })));
+            const k = getKnowledge(itemId, orgId);
+            return k ? json(res, 200, fullJson(k)) : json(res, 404, { error: "introuvable" });
+          }
+          const a = gate("knowledge:manage");
+          if (typeof a === "string") return deny(a);
+          if (req.method === "POST" && !itemId) {
+            const v = validateKnowledge(await body(req), false, (id) => !!getProjectInOrg(id, orgId));
+            if (!v.ok) return json(res, 400, { error: v.error });
+            if (countKnowledge(orgId) >= MAX_ITEMS) return json(res, 409, { error: `limite de ${MAX_ITEMS} éléments atteinte` });
+            const f = v.value;
+            const id = insertKnowledge({ org_id: orgId, project_id: f.project_id ?? null, title: f.title!, content: f.content!, enabled: !!f.enabled, pinned: !!f.pinned, created_by: user.id });
+            log("knowledge.create", { type: "knowledge", id }, { title: f.title, scope: f.project_id ? "project" : "organization" }); // jamais le contenu
+            return json(res, 201, fullJson(getKnowledge(id, orgId)!));
+          }
+          if (itemId && (req.method === "PATCH" || req.method === "DELETE")) {
+            const cur = getKnowledge(itemId, orgId);
+            if (!cur) return json(res, 404, { error: "introuvable" });
+            if (req.method === "DELETE") { deleteKnowledge(itemId, orgId); log("knowledge.delete", { type: "knowledge", id: itemId }, { title: cur.title }); return json(res, 200, { ok: true }); }
+            const v = validateKnowledge(await body(req), true, (id) => !!getProjectInOrg(id, orgId));
+            if (!v.ok) return json(res, 400, { error: v.error });
+            if (!Object.keys(v.value).length) return json(res, 400, { error: "rien à modifier" });
+            updateKnowledge(itemId, orgId, v.value);
+            log("knowledge.update", { type: "knowledge", id: itemId }, { title: v.value.title ?? cur.title, fields: Object.keys(v.value).map((x) => (x === "project_id" ? "projectId" : x)) });
+            return json(res, 200, fullJson(getKnowledge(itemId, orgId)!));
+          }
+        }
 
         // ---------------- statistiques (tableau de bord) et usage (administrateurs)
         if ((kind === "stats" || kind === "usage") && req.method === "GET" && !itemId) {

@@ -74,6 +74,13 @@ db.exec(`
   );
   create index if not exists audit_org on audit_log(org_id, ts);
   create index if not exists audit_user on audit_log(user_id, ts);
+  create table if not exists knowledge (
+    id text primary key, org_id text not null references orgs(id) on delete cascade,
+    project_id text references projects(id) on delete cascade,
+    title text not null, content text not null, enabled integer not null default 1, pinned integer not null default 0,
+    created_by text, created_at integer not null, updated_at integer not null
+  );
+  create index if not exists knowledge_org on knowledge(org_id);
   create table if not exists sessions (
     token_hash text primary key, user_id text not null references users(id) on delete cascade,
     created_at integer not null, expires_at integer not null
@@ -534,8 +541,41 @@ export function deleteOrgCascade(orgId: string) {
   db.exec("begin");
   try {
     db.prepare("delete from events where task_id in (select id from tasks where org_id = ?)").run(orgId);
-    for (const t of ["tasks", "proxy_calls", "audit_log", "invitations", "projects", "secrets", "memberships"]) db.prepare(`delete from ${t} where org_id = ?`).run(orgId);
+    for (const t of ["tasks", "proxy_calls", "audit_log", "invitations", "knowledge", "projects", "secrets", "memberships"]) db.prepare(`delete from ${t} where org_id = ?`).run(orgId);
     db.prepare("delete from orgs where id = ?").run(orgId);
     db.exec("commit");
   } catch (e) { db.exec("rollback"); throw e; }
 }
+
+/* ------------------------------- connaissances ------------------------------- */
+
+export type KnowledgeRow = {
+  id: string; org_id: string; project_id: string | null; title: string; content: string;
+  enabled: number; pinned: number; created_by: string | null; created_at: number; updated_at: number; author_email?: string | null;
+};
+
+export function insertKnowledge(k: { org_id: string; project_id: string | null; title: string; content: string; enabled: boolean; pinned: boolean; created_by: string }): string {
+  const id = rid(), now = Date.now();
+  db.prepare("insert into knowledge (id, org_id, project_id, title, content, enabled, pinned, created_by, created_at, updated_at) values (?,?,?,?,?,?,?,?,?,?)")
+    .run(id, k.org_id, k.project_id, k.title, k.content, k.enabled ? 1 : 0, k.pinned ? 1 : 0, k.created_by, now, now);
+  return id;
+}
+
+export const listKnowledge = (orgId: string) =>
+  db.prepare("select k.*, u.email as author_email from knowledge k left join users u on u.id = k.created_by where k.org_id = ? order by k.pinned desc, k.updated_at desc").all(orgId) as KnowledgeRow[];
+
+export const getKnowledge = (id: string, orgId: string) =>
+  db.prepare("select k.*, u.email as author_email from knowledge k left join users u on u.id = k.created_by where k.id = ? and k.org_id = ?").get(id, orgId) as KnowledgeRow | undefined;
+
+export const countKnowledge = (orgId: string) =>
+  (db.prepare("select count(*) as n from knowledge where org_id = ?").get(orgId) as { n: number }).n;
+
+export function updateKnowledge(id: string, orgId: string, p: { project_id?: string | null; title?: string; content?: string; enabled?: number; pinned?: number }) {
+  const keys = Object.keys(p) as (keyof typeof p)[];
+  if (!keys.length) return false;
+  return db.prepare(`update knowledge set ${keys.map((k) => `${k} = ?`).join(", ")}, updated_at = ? where id = ? and org_id = ?`)
+    .run(...keys.map((k) => p[k] as string | number | null), Date.now(), id, orgId).changes > 0;
+}
+
+export const deleteKnowledge = (id: string, orgId: string) =>
+  db.prepare("delete from knowledge where id = ? and org_id = ?").run(id, orgId).changes > 0;
