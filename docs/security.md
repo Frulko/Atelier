@@ -45,6 +45,9 @@ This is covered by `isolation.test.ts` and `resources.test.ts`, which start a re
 - **Protected paths.** If the diff touches a project's `protectedPaths` (migrations, CI config…), the MR/PR is titled `[REVIEW REQUIRED]` and says so.
 - **CSRF.** Session cookies are `HttpOnly; SameSite=Strict`, and state-changing requests are rejected when `Origin` does not match the host.
 - **Sessions.** 256-bit random token; only its SHA-256 is stored, so a database leak cannot be replayed. Sliding 7-day expiry, revoked on logout and on password change.
+- **Audit log.** Every state-changing action is recorded (actor, organization, target, details, IP) in an append-only table that no route can edit or delete, readable by admins and exportable as CSV with spreadsheet-formula cells neutralized. Details never contain a secret value, a password or an invitation link — a test scans the whole log for them. Sign-in attempts on unknown accounts leave no trace.
+- **Sessions you can see.** Each person can list their active sessions (browser, IP, last use) and revoke any of their own; a session is named by a prefix of its hash, never by its token.
+- **Deleting an organization** is owner-only, needs the exact name, is refused while tasks are queued or running, and runs in one transaction (everything it owns goes; user accounts stay).
 - **Invitations.** The link token is random, single-use, expires in 7 days and is stored only as a SHA-256. Roles can only be granted at or below the granter's own, only an owner can touch an owner, and the last owner cannot be demoted or removed.
 - **Passwords.** scrypt with a per-user salt, parameters stored with the hash, bounded length, 8-character minimum. Login runs a hash even for unknown accounts and returns the same message, so timing and wording do not reveal which accounts exist. Failed logins are rate-limited per IP and per e-mail.
 

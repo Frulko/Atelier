@@ -43,43 +43,61 @@ Secrets are **never returned** by the API after creation — only a label and a 
 
 ## API
 
-All organization routes are under `/api/orgs/:org`. Every route except login requires a session cookie.
+All organization routes are under `/api/orgs/:org`. Every route except login and `accept-invite` requires a session cookie. Anything that belongs to another organization answers **404**; a role that is too low answers **403**.
 
 ```
+# account
 POST   /api/auth/login            { email, password }            → session cookie
 POST   /api/auth/logout
 POST   /api/auth/password         { current, next }              → revokes other sessions
 POST   /api/auth/accept-invite    { token, password? }           public: creates the account, or joins a signed-in user whose e-mail matches
-GET    /api/me                                                    → user + organizations + roles
+GET    /api/me                                                    → user (id, email, name) + organizations + roles
+PATCH  /api/me                    { name }                       display name (80 characters, or null)
+GET    /api/me/activity                                           what you did, across organizations
+GET    /api/me/sessions                                           active sessions: browser, IP, last use, which is current
+DELETE /api/me/sessions/:id                                       revoke one of YOUR sessions
+POST   /api/me/sessions/revoke-others
 
+# organization
 POST   /api/orgs                  { name }                       any signed-in user → becomes owner
 GET    /api/orgs/:org                                             admin+  → name, budget, month spend
-PATCH  /api/orgs/:org             { budgetUsdMonth }              admin+  (a number ≥ 0, or null for no cap)
+PATCH  /api/orgs/:org             { name?, budgetUsdMonth? }      admin+  (budget: a number ≥ 0, or null for no cap)
+DELETE /api/orgs/:org             { confirm: "<exact name>" }     owner   refused while tasks run; deletes everything it owns
 
+# people
 GET    /api/orgs/:org/members                                     admin+
 PATCH  /api/orgs/:org/members/:userId    { role }                 admin+  (see the privilege rules)
 DELETE /api/orgs/:org/members/:userId                             admin+
-
 GET    /api/orgs/:org/invitations                                 admin+  (never the link)
 POST   /api/orgs/:org/invitations { email, role }                 admin+  → returns the link token ONCE
 DELETE /api/orgs/:org/invitations/:id                             admin+
 
+# projects and integrations
 GET    /api/orgs/:org/projects                                    viewer+
 POST   /api/orgs/:org/projects                                    admin+
 PATCH  /api/orgs/:org/projects/:id                                admin+
 DELETE /api/orgs/:org/projects/:id                                admin+
-
-GET    /api/orgs/:org/secrets                                     admin+  (never the value)
+POST   /api/orgs/:org/projects/:id/verify                         admin+  git ls-remote with the project's token, no clone
+GET    /api/orgs/:org/secrets                                     admin+  (never the value) + which projects use each, last use
 POST   /api/orgs/:org/secrets     { kind, provider?, label, value }
+PATCH  /api/orgs/:org/secrets/:id { label?, value? }              admin+  rotate the value, keeping the id
 DELETE /api/orgs/:org/secrets/:id                                 409 if a project uses it
 
-GET    /api/orgs/:org/tasks                                       viewer+
+# tasks
+GET    /api/orgs/:org/tasks?status=&project=&user=&q=&from=&to=&limit=&offset=
+                                                                  viewer+  → { items, total, limit, offset }
 POST   /api/orgs/:org/tasks       { project, prompt }             member+
-GET    /api/orgs/:org/tasks/:id
+GET    /api/orgs/:org/tasks/:id                                   requester, project name, timing, files changed
 GET    /api/orgs/:org/tasks/:id/events                            live stream (SSE)
 POST   /api/orgs/:org/tasks/:id/cancel                            own task, or admin+
-```
+POST   /api/orgs/:org/tasks/:id/retry                             member+  a new task with the same request
 
+# tracking
+GET    /api/orgs/:org/stats?days=30                               viewer+  totals, success rate, average duration, per day, per project
+GET    /api/orgs/:org/usage?days=30                               admin+   spend and calls per day, member, provider; budget and projection
+GET    /api/orgs/:org/audit?action=&user=&q=&from=&to=&limit=&offset=
+                                                                  admin+   who did what; add format=csv to export
+```
 
 ## Upgrading from the single-user version
 

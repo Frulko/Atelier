@@ -2,7 +2,7 @@
 
 The first UI was a single static page. Atelier now gets a real application: navigation, dashboards, filtering, detail pages, audit and usage tracking, and settings for the organization and the account.
 
-**Status:** planned. This page records the decisions and the order of work; each phase is checked off when it ships.
+**Status:** phase 1 (backend foundations) is done; the web application itself is next. This page records the decisions and the order of work; each phase is checked off when it ships.
 
 ## Decisions
 
@@ -51,7 +51,7 @@ Every one of these keeps the existing rules: scoped by organization, authorized 
 
 ## Phases
 
-1. **Backend foundations**: timing and files on tasks, task filters and pagination, audit log, statistics and usage endpoints, profile and sessions, organization rename/delete, project access check. Each with tests.
+1. **Backend foundations** ✅: timing and files on tasks, task filters and pagination, audit log, statistics and usage endpoints, profile and sessions, organization rename/delete, project access check. Each with tests.
 2. **Application scaffold**: `web/` with Vite, React, Tailwind and TanStack; build wired into the Docker image; static serving with CSP; app shell, theme, authentication and invitation pages, organization switcher.
 3. **Pages**, one commit each: Overview, Tasks (list, detail, new), Projects, Team, Integrations, Usage, Audit log, Organization, Account.
 4. **Polish**: empty, loading and error states, keyboard and screen-reader basics, responsive layout, dark mode review, and the browser test extended to cover each page.

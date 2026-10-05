@@ -26,6 +26,11 @@ Three commands. All three must be green before a commit.
 | Budget: month boundaries, per-organization spend, cap semantics, API roles, task creation refused when over budget | `budget.test.ts` |
 | Organizations, members, invitations: privilege escalation, single-use and expiry, hashed token, address match, last owner, cross-organization isolation | `members.test.ts` |
 | **The web UI in a real browser** (Playwright, `scripts/ui_check.py`): login with a wrong then right password, one screen at a time, a task run to "branch pushed", a secret that never reappears in the page, an invitation link opened by a second browser that joins as a member, single-use link, role change, two-click removal, logout, no console error | `smoke.sh` (skipped, with a notice, if Playwright is not installed) |
+| Task list filters, pagination bounds, literal text search, timing, retry | `tasks-api.test.ts` |
+| Audit log: what is recorded, who reads it, filters, CSV, **no secret ever in it** | `audit.test.ts` |
+| Dashboard and usage statistics: exact totals, no gaps, windows, roles, isolation | `stats.test.ts` |
+| Profile, active sessions and revocation, organization rename, delete cascade | `account-org.test.ts` |
+| Project access check against a real git repository, secret usage, rotation | `secrets-ops.test.ts` |
 | Invitation flow end to end (create, accept, reuse refused, new member's role and access) | `smoke.sh` |
 | 401 without a session, login, CSRF (403), password change revoking other devices, logout | `smoke.sh` |
 | Clone → sandbox → check → **fix loop** → commit → push → cleanup, with several projects | `smoke.sh` |
