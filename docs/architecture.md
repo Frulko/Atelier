@@ -56,6 +56,7 @@ atelier/
 │   ├── src/proxy.ts                model-provider proxy (task token → organization → key)
 │   ├── src/tokens.ts               one-time task tokens
 │   ├── src/budget.ts               monthly budget check
+│   ├── src/invites.ts              invitation token hashing and lifetime
 │   ├── src/db.ts                   SQLite schema and queries
 │   ├── src/bootstrap.ts            first owner account, one-time import of the legacy config
 │   ├── src/config.ts               environment variables

@@ -36,7 +36,8 @@ To run it for real (your own projects, a real model, a real forge), see **[Deplo
 | Accounts, sessions, organizations, roles, per-organization isolation | ✅ working, covered by an isolation test suite |
 | Encrypted secrets, projects in the database, per-organization model keys and monthly budget | ✅ working |
 | **Real Claude agent**, **real GitLab MR**, **real GitHub PR** | ⚠️ implemented, **not yet exercised** (no key or forge in the dev environment) |
-| Invitations and a management UI for organizations, projects and secrets | 🚧 next ([roadmap](docs/roadmap.md)) |
+| Organizations, members and invitations (API) | ✅ working |
+| Web UI for organizations, members, invitations, projects, secrets and the budget | 🚧 next ([roadmap](docs/roadmap.md)) |
 
 Read **[Security → known limitations](docs/security.md#known-limitations)** before exposing it to anyone.
 

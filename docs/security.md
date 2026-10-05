@@ -45,6 +45,7 @@ This is covered by `isolation.test.ts` and `resources.test.ts`, which start a re
 - **Protected paths.** If the diff touches a project's `protectedPaths` (migrations, CI config…), the MR/PR is titled `[REVIEW REQUIRED]` and says so.
 - **CSRF.** Session cookies are `HttpOnly; SameSite=Strict`, and state-changing requests are rejected when `Origin` does not match the host.
 - **Sessions.** 256-bit random token; only its SHA-256 is stored, so a database leak cannot be replayed. Sliding 7-day expiry, revoked on logout and on password change.
+- **Invitations.** The link token is random, single-use, expires in 7 days and is stored only as a SHA-256. Roles can only be granted at or below the granter's own, only an owner can touch an owner, and the last owner cannot be demoted or removed.
 - **Passwords.** scrypt with a per-user salt, parameters stored with the hash, bounded length, 8-character minimum. Login runs a hash even for unknown accounts and returns the same message, so timing and wording do not reveal which accounts exist. Failed logins are rate-limited per IP and per e-mail.
 
 ## Known limitations
@@ -53,7 +54,7 @@ Read these before exposing the service.
 
 - **The Docker socket is mounted into the orchestrator, which is equivalent to root on the host.** Acceptable for a trusted team on a dedicated machine; **not acceptable for a multi-tenant SaaS** with mutually untrusting customers. A filtering socket proxy helps; microVM isolation (gVisor/Firecracker) fixes it properly. See the [roadmap](roadmap.md).
 - **Spend is controlled coarsely.** The monthly budget counts the cost agents *report* per task, so one running task can overshoot it by up to `MAX_BUDGET_USD`. Tokens are not metered live in the proxy yet.
-- **No invitations and no organization-creation API yet** (step U6): in practice only the default organization exists. Organizations, projects and secrets can be managed through the API; the web UI does not expose them yet.
+- **No web UI yet for organizations, members, invitations, projects, secrets or the budget** (step U6b): they are managed through the API. Invitations are **links you hand over yourself** — nothing is e-mailed, so whoever receives the link can use it until it expires or is revoked (an existing account must also match the invited address).
 - **Rate limiting is in memory**: it resets on restart and does not span several instances.
 - **No egress filtering of the orchestrator.** A user who may create projects can make it clone from any allowed `https` host; set `ATELIER_GIT_HOSTS` to restrict it.
 - **The sandbox has no Internet**, so the agent cannot `npm install`, and its image contains only Node. Projects that need dependencies need a prepared image or a registry proxy (not built).

@@ -24,6 +24,8 @@ Three commands. All three must be green before a commit.
 | One-time import of the legacy configuration | `legacy-import.test.ts` |
 | Model proxy against a fake provider: missing/wrong/revoked token, each organization's own key, no global fallback, 402 over budget, allowed routes only | `proxy.test.ts` |
 | Budget: month boundaries, per-organization spend, cap semantics, API roles, task creation refused when over budget | `budget.test.ts` |
+| Organizations, members, invitations: privilege escalation, single-use and expiry, hashed token, address match, last owner, cross-organization isolation | `members.test.ts` |
+| Invitation flow end to end (create, accept, reuse refused, new member's role and access) | `smoke.sh` |
 | 401 without a session, login, CSRF (403), password change revoking other devices, logout | `smoke.sh` |
 | Clone → sandbox → check → **fix loop** → commit → push → cleanup, with several projects | `smoke.sh` |
 
