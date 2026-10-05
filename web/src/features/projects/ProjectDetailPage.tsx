@@ -76,7 +76,7 @@ export function ProjectDetailPage() {
       <header className="rise mb-8 flex flex-wrap items-start justify-between gap-4" style={{ ["--i" as string]: 1 }}>
         <div className="min-w-0">
           <div className="mb-2 flex items-center gap-2"><Badge tone={p.forge === "none" ? "muted" : "info"}>{FORGE_LABEL[p.forge]}</Badge><span className="font-mono text-xs text-muted">{p.slug}</span></div>
-          <h1 className="font-display text-4xl font-medium leading-tight">{p.name}</h1>
+          <h1 className="font-display text-3xl leading-tight">{p.name}</h1>
           <a href={p.repo.startsWith("http") ? p.repo : undefined} target="_blank" rel="noopener noreferrer" className="mt-1.5 inline-flex items-center gap-1.5 font-mono text-[13px] text-muted hover:text-accent">{repoLabel(p.repo)}{p.repo.startsWith("http") && <ExternalLink className="size-3" aria-hidden />}</a>
         </div>
         <div className="flex flex-wrap gap-2">

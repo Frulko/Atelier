@@ -85,7 +85,7 @@ export function TeamPage() {
 
       <ul className="mb-10 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[...ROLES].reverse().map((r, i) => (
-          <li key={r} className="rise rounded-2xl border border-line bg-surface p-4" style={{ ["--i" as string]: i }}>
+          <li key={r} className="rise rounded-xl border border-line bg-surface p-4" style={{ ["--i" as string]: i }}>
             <div className="mb-2 flex items-center gap-2"><ShieldCheck className="size-4 text-muted" aria-hidden /><RoleBadge role={r} /></div>
             <p className="text-[13px] leading-snug text-muted">{ROLE_HELP[r]}</p>
           </li>

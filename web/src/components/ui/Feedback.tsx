@@ -10,9 +10,9 @@ export function Skeleton({ className }: { className?: string }) {
 
 export function EmptyState({ title, hint, action, icon }: { title: string; hint?: ReactNode; action?: ReactNode; icon?: ReactNode }) {
   return (
-    <div className="grid place-items-center gap-3 rounded-2xl border border-dashed border-line-strong px-6 py-14 text-center">
+    <div className="grid place-items-center gap-3 rounded-xl border border-dashed border-line-strong px-6 py-14 text-center">
       <div className="grid size-12 place-items-center rounded-full bg-line/60 text-muted">{icon ?? <Inbox className="size-5" aria-hidden />}</div>
-      <p className="font-display text-xl text-ink">{title}</p>
+      <p className="font-display text-lg text-ink">{title}</p>
       {hint && <p className="max-w-md text-sm text-muted">{hint}</p>}
       {action}
     </div>
@@ -23,7 +23,7 @@ export const errorText = (e: unknown) => (e instanceof ApiError ? e.message : e 
 
 export function ErrorBox({ error, retry }: { error: unknown; retry?: () => void }) {
   return (
-    <div role="alert" className="flex items-start gap-3 rounded-2xl border border-bad/30 bg-bad-soft p-4 text-sm text-bad">
+    <div role="alert" className="flex items-start gap-3 rounded-xl border border-bad/30 bg-bad-soft p-4 text-sm text-bad">
       <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
       <div className="grid gap-2"><p>{errorText(error)}</p>{retry && <Button size="sm" variant="secondary" onClick={retry}>Réessayer</Button>}</div>
     </div>

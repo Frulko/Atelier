@@ -28,8 +28,8 @@ function Nav({ onNavigate }: { onNavigate?: () => void }) {
     <nav aria-label="Navigation principale" className="grid gap-0.5">
       {ITEMS.filter((i) => !i.admin || isAdmin).map((i) => (
         <Link key={i.to} to={i.to} params={{ orgId }} onClick={onNavigate} activeOptions={{ exact: !!i.exact }}
-          className="group flex items-center gap-3 rounded-lg px-3 py-2 text-[14px] text-side-muted transition hover:bg-white/[0.06] hover:text-side-ink"
-          activeProps={{ className: "!bg-white/[0.09] !text-side-ink [&>svg]:!text-accent" }}>
+          className="group flex items-center gap-3 rounded-md px-3 py-2 text-[14px] font-medium text-side-muted transition-colors hover:bg-side-hover hover:text-side-ink"
+          activeProps={{ className: "!bg-side-active !text-side-ink [&>svg]:!text-accent" }}>
           <i.icon className="size-[18px] transition group-hover:text-side-ink" aria-hidden />
           {i.label}
         </Link>
@@ -48,18 +48,18 @@ function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
   });
   return (
     <div className="flex h-full flex-col gap-6 p-4">
-      <div className="flex items-center gap-2.5 px-1 pt-1"><Logo /><span className="font-display text-xl font-medium text-side-ink">Atelier</span></div>
+      <div className="flex items-center gap-2.5 px-1 pt-1"><Logo /><span className="font-display text-lg text-side-ink">Atelier</span></div>
       <OrgSwitcher />
       <div className="min-h-0 flex-1 overflow-y-auto"><Nav onNavigate={onNavigate} /></div>
       <div className="border-t border-side-line pt-4">
-        <Link to="/o/$orgId/account" params={{ orgId }} onClick={onNavigate} className="flex items-center gap-3 rounded-lg px-2 py-2 transition hover:bg-white/[0.06]">
+        <Link to="/o/$orgId/account" params={{ orgId }} onClick={onNavigate} className="flex items-center gap-3 rounded-md px-2 py-2 transition-colors hover:bg-side-hover">
           <Avatar name={me?.user.name ?? me?.user.email} />
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-medium text-side-ink">{me?.user.name ?? me?.user.email.split("@")[0]}</span>
             <span className="block truncate text-xs text-side-muted">{me?.user.email}</span>
           </span>
         </Link>
-        <button type="button" onClick={() => logout.mutate()} className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] text-side-muted transition hover:bg-white/[0.06] hover:text-side-ink">
+        <button type="button" onClick={() => logout.mutate()} className="mt-1 flex w-full items-center gap-3 rounded-md px-3 py-2 text-[13px] text-side-muted transition-colors hover:bg-side-hover hover:text-side-ink">
           <LogOut className="size-4" aria-hidden /> Se déconnecter
         </button>
       </div>
@@ -70,17 +70,17 @@ function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
 export function AppShell() {
   const [menu, setMenu] = useState(false);
   return (
-    <div className="min-h-screen lg:grid lg:grid-cols-[17.5rem_1fr]">
-      <aside className="sticky top-0 hidden h-screen bg-side lg:block" aria-label="Barre latérale"><SidebarBody /></aside>
+    <div className="min-h-screen lg:grid lg:grid-cols-[16.5rem_1fr]">
+      <aside className="sticky top-0 hidden h-screen border-r border-side-line bg-side lg:block" aria-label="Barre latérale"><SidebarBody /></aside>
 
-      <header className="sticky top-0 z-20 flex items-center gap-3 bg-side px-4 py-3 lg:hidden">
-        <button type="button" onClick={() => setMenu(true)} aria-label="Ouvrir le menu" className="rounded-lg p-1.5 text-side-ink hover:bg-white/10"><Menu className="size-5" /></button>
+      <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-side-line bg-side px-4 py-3 lg:hidden">
+        <button type="button" onClick={() => setMenu(true)} aria-label="Ouvrir le menu" className="rounded-md p-1.5 text-side-ink hover:bg-side-hover"><Menu className="size-5" /></button>
         <Logo className="size-7" /><span className="font-display text-lg text-side-ink">Atelier</span>
       </header>
       <div className={clsx("fixed inset-0 z-40 lg:hidden", menu ? "" : "pointer-events-none")} aria-hidden={!menu}>
-        <div className={clsx("absolute inset-0 bg-[#1c1915]/60 transition-opacity", menu ? "opacity-100" : "opacity-0")} onClick={() => setMenu(false)} />
-        <aside className={clsx("absolute inset-y-0 left-0 w-[18rem] bg-side transition-transform", menu ? "translate-x-0" : "-translate-x-full")}>
-          <button type="button" onClick={() => setMenu(false)} aria-label="Fermer le menu" className="absolute right-3 top-3 rounded-lg p-1.5 text-side-muted hover:text-side-ink"><X className="size-5" /></button>
+        <div className={clsx("absolute inset-0 bg-black/50 transition-opacity", menu ? "opacity-100" : "opacity-0")} onClick={() => setMenu(false)} />
+        <aside className={clsx("absolute inset-y-0 left-0 w-[18rem] border-r border-side-line bg-side transition-transform", menu ? "translate-x-0" : "-translate-x-full")}>
+          <button type="button" onClick={() => setMenu(false)} aria-label="Fermer le menu" className="absolute right-3 top-3 rounded-md p-1.5 text-side-muted hover:text-side-ink"><X className="size-5" /></button>
           <SidebarBody onNavigate={() => setMenu(false)} />
         </aside>
       </div>

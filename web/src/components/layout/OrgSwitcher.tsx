@@ -46,8 +46,8 @@ export function OrgSwitcher() {
   return (
     <div ref={ref} className="relative">
       <button type="button" onClick={() => setOpen((o) => !o)} aria-haspopup="listbox" aria-expanded={open}
-        className="flex w-full items-center gap-3 rounded-xl border border-side-line bg-white/[0.04] px-3 py-2.5 text-left transition hover:border-side-muted">
-        <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-accent font-display text-base font-semibold text-accent-ink">{(org?.name ?? "?")[0]?.toUpperCase()}</span>
+        className="flex w-full items-center gap-3 rounded-lg border border-side-line bg-raised px-3 py-2 text-left shadow-xs transition-colors hover:bg-side-hover">
+        <span className="grid size-8 shrink-0 place-items-center rounded-md bg-primary text-sm font-semibold text-primary-ink">{(org?.name ?? "?")[0]?.toUpperCase()}</span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-medium text-side-ink">{org?.name ?? "Organisation"}</span>
           <span className="block text-xs text-side-muted">{org ? ROLE_LABEL[org.role] : ""}</span>

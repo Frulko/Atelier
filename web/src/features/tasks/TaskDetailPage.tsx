@@ -84,7 +84,7 @@ export function TaskDetailPage() {
       <header className="rise mb-8 flex flex-wrap items-start justify-between gap-4" style={{ ["--i" as string]: 1 }}>
         <div className="min-w-0 max-w-3xl">
           <div className="mb-3 flex items-center gap-3"><StatusPill status={t.status} /><span className="font-mono text-xs text-muted">#{t.id}</span></div>
-          <h1 className="font-display text-[2rem] font-medium leading-snug text-ink">{t.prompt}</h1>
+          <h1 className="font-display text-2xl leading-snug text-ink">{t.prompt}</h1>
         </div>
         <div className="flex flex-wrap gap-2">
           {t.mr_url && <a href={t.mr_url} target="_blank" rel="noopener noreferrer"><Button variant="primary" icon={<ExternalLink className="size-4" />}>Ouvrir la proposition</Button></a>}
@@ -94,7 +94,7 @@ export function TaskDetailPage() {
       </header>
 
       {t.flagged > 0 && (
-        <div role="alert" className="rise mb-6 flex items-start gap-3 rounded-2xl border border-warn/40 bg-warn-soft p-4 text-sm text-warn" style={{ ["--i" as string]: 2 }}>
+        <div role="alert" className="rise mb-6 flex items-start gap-3 rounded-xl border border-warn/40 bg-warn-soft p-4 text-sm text-warn" style={{ ["--i" as string]: 2 }}>
           <ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
           <p><b>Relecture humaine obligatoire.</b> {t.flagged} fichier{t.flagged > 1 ? "s" : ""} modifié{t.flagged > 1 ? "s" : ""} touche{t.flagged > 1 ? "nt" : ""} un chemin protégé du projet. La demande de fusion est marquée en conséquence.</p>
         </div>

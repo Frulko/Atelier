@@ -33,7 +33,7 @@ function BudgetCard({ cap, spent, projected }: { cap: number | null; spent: numb
       <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
         <div>
           <p className="label">Budget du mois en cours</p>
-          <p className="tnum font-display mt-2 text-5xl font-medium">{fmtUsd(spent)}{cap != null && <span className="text-2xl text-muted"> / {fmtUsd(cap)}</span>}</p>
+          <p className="tnum font-display mt-2 text-4xl">{fmtUsd(spent)}{cap != null && <span className="text-2xl text-muted"> / {fmtUsd(cap)}</span>}</p>
           {cap != null ? (
             <>
               <div className="mt-4 h-2.5 overflow-hidden rounded-full bg-line" role="progressbar" aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100} aria-label="Budget consommé"><div className={`h-full rounded-full transition-all ${pct >= 90 ? "bg-bad" : "bg-accent"}`} style={{ width: `${pct}%` }} /></div>
@@ -42,7 +42,7 @@ function BudgetCard({ cap, spent, projected }: { cap: number | null; spent: numb
             </>
           ) : <p className="mt-3 text-sm text-muted">Aucun plafond : la dépense n'est pas limitée. Projection fin de mois : <b className="tnum text-ink">{fmtUsd(projected)}</b>.</p>}
         </div>
-        <form onSubmit={(e) => { e.preventDefault(); save.mutate(value === "" ? null : Number(value)); }} className="grid content-start gap-3 rounded-2xl bg-line/40 p-4">
+        <form onSubmit={(e) => { e.preventDefault(); save.mutate(value === "" ? null : Number(value)); }} className="grid content-start gap-3 rounded-xl bg-line/40 p-4">
           <Field label="Plafond mensuel (en $)" hint="Atteint, les nouvelles tâches sont refusées. Vide : illimité.">{(id) => <Input id={id} type="number" min="0" max="1000000" step="1" value={value} onChange={(e) => setValue(e.target.value)} placeholder="Illimité" />}</Field>
           <FormError error={save.error} />
           <div className="flex gap-2"><Button variant="primary" type="submit" loading={save.isPending}>Enregistrer</Button>{cap != null && <Button onClick={() => { setValue(""); save.mutate(null); }}>Supprimer le plafond</Button>}</div>

@@ -10,7 +10,7 @@ The first UI was a single static page. Atelier now gets a real application: navi
 |---|---|---|
 | Framework | **React 19 + TypeScript + Vite**, in `web/` | The orchestrator stays free of runtime dependencies; the app is a separate package built to static files that the orchestrator serves |
 | Routing and data | **TanStack Router** (typed routes, code-based) and **TanStack Query** (server state, cache, polling) | Typed, and Query replaces hand-written fetch and refresh code |
-| Styling | **Tailwind CSS v4** with a small set of local components | No component-library lock-in; design tokens in one CSS file; light, dark and system themes |
+| Styling | **Tailwind CSS v4** with a small set of local components, shadcn-style tokens | No component-library lock-in; design tokens in one CSS file; light, dark and system themes |
 | Charts | Small hand-built SVG components | The charts are simple (stacked bars, a cumulative line, a donut, horizontal bars); avoids a heavy charting dependency |
 | Language | French UI, strings kept in one module per area | The users are French-speaking; extracting to a locale file stays cheap |
 | Serving | Orchestrator serves `web/dist` with an SPA fallback, strict **Content-Security-Policy** and cache headers | One container, no CORS; the policy is a security gain over the inline-script page |
@@ -62,7 +62,9 @@ Real-time notifications (e-mail, Slack, webhooks), API tokens for automation, bi
 
 ## Design
 
-A craft-workshop look rather than a generic dashboard: warm paper with a light grain, ink black, a single signal orange, a soft serif for titles and big numbers (Fraunces), a grotesque for text (Instrument Sans) and a monospace for labels and identifiers (IBM Plex Mono). Fonts are bundled and served by the application itself. Light and dark themes come from CSS variables, so no component needs a dark variant; the dark sidebar is part of the identity. One staggered entrance animation per page, disabled for people who ask for reduced motion.
+Light, clean and neutral, in the spirit of shadcn/ui: a white page, hairline borders, small radii, subtle shadows, a near-black primary button, a light sidebar. Typography is Geist (text) and Geist Mono (identifiers), bundled and served by the application itself. The one colour that carries the brand is a signal orange: the logo, progress and chart lines, the active navigation icon, focus rings and running states — never a filled button. Status colours (green, amber, red, blue) are used as soft badges.
+
+Light and dark themes come from CSS variables (`web/src/styles.css`), so no component needs a dark variant. The system preference is the default; the account page lets a person force one. One short staggered entrance per page, disabled for people who ask for reduced motion.
 
 ## What the interface checks for you
 
