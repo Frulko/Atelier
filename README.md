@@ -8,6 +8,17 @@ A teammate writes *"add a volume discount to the Travel tab"*. An AI agent edits
   <img src="docs/img/architecture.png" alt="Atelier architecture: a trusted orchestrator holds every secret and runs the AI in an untrusted, disposable sandbox" width="560">
 </p>
 
+<table>
+  <tr>
+    <td><a href="docs/img/app-overview.jpg"><img src="docs/img/app-overview.jpg" alt="Overview: success rate, activity, spend and recent tasks"></a></td>
+    <td><a href="docs/img/app-task.jpg"><img src="docs/img/app-task.jpg" alt="A task with its live journal and the files changed"></a></td>
+  </tr>
+  <tr>
+    <td><a href="docs/img/app-usage.jpg"><img src="docs/img/app-usage.jpg" alt="Usage: monthly budget, spend and calls per member, project and provider"></a></td>
+    <td><a href="docs/img/app-audit.jpg"><img src="docs/img/app-audit.jpg" alt="Audit log: who did what, with filters and CSV export"></a></td>
+  </tr>
+</table>
+
 ## The idea in four lines
 
 - **The agent never holds a power it could abuse.** Git tokens, model API keys, pushing and merging all live in the orchestrator — plain code the agent cannot change.
@@ -22,6 +33,7 @@ You need Docker. No API key and no Git server are required to try it: a determin
 ```bash
 git clone <this repository> atelier && cd atelier
 ./scripts/demo.sh        # http://localhost:8080 — e-mail admin@localhost, password demo
+                         # (seeded with 45 days of history, five members and charts to look at)
 ```
 
 Ask for anything. A request containing the word **"casse"** makes the project's check fail so you can watch the agent get re-run with the error and fix it.
@@ -36,7 +48,8 @@ To run it for real (your own projects, a real model, a real forge), see **[Deplo
 | Accounts, sessions, organizations, roles, per-organization isolation | ✅ working, covered by an isolation test suite |
 | Encrypted secrets, projects in the database, per-organization model keys and monthly budget | ✅ working |
 | **Real Claude agent**, **real GitLab MR**, **real GitHub PR** | ⚠️ implemented, **not yet exercised** (no key or forge in the dev environment) |
-| Organizations, members, invitations, projects, secrets and budget — API and web UI | ✅ working, UI driven in a real browser by the smoke test |
+| A full web application: overview, tasks, projects, team, integrations, usage, audit log, organization and account pages (light and dark, phone-ready) | ✅ working, driven in a real browser by the smoke test |
+| Organizations, members, invitations, projects, secrets, budget, audit log, sessions | ✅ working, API and UI |
 | SSO (OIDC, GitLab / GitHub sign-in), real-agent validation, previews, audit log | 🚧 next ([roadmap](docs/roadmap.md)) |
 
 Read **[Security → known limitations](docs/security.md#known-limitations)** before exposing it to anyone.

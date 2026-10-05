@@ -18,6 +18,17 @@ git --git-dir=.demo/fixtures/mini-regie.git branch     # branches created by the
 
 A request containing **"casse"** makes the check fail once, so you can watch the fix loop. Stop it with the `down -v` command that `demo.sh` prints.
 
+## Building the image
+
+The orchestrator image is built in two stages from the **repository root** (`docker-compose.yml` sets the build context to `.`): the first stage compiles the web application with Node, the second keeps only the compiled static files next to the server. Nothing else is needed on the host — and a Portainer *Repository* stack builds it the same way.
+
+To work on the interface itself:
+
+```bash
+cd web && npm install
+ATELIER_API=http://localhost:8080 npm run dev    # http://localhost:5173, proxies /api to a running orchestrator
+```
+
 ## Run it for real
 
 ```bash

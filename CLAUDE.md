@@ -14,11 +14,12 @@ Run from `orchestrator/` unless noted.
 |---|---|
 | `npm run check` | Type-check (`tsc --noEmit`) |
 | `npm test` | Unit and HTTP integration tests (`node --test`) |
+| `npm run check`, `npm test`, `npm run build` (in `web/`) | Type-check, unit-test and build the web application |
 | `./scripts/smoke.sh` (repo root) | End-to-end test in Docker, no AI and no API key. Also drives the UI in a browser if Playwright is installed (`pip install playwright`) |
 | `./scripts/demo.sh` (repo root) | Local demo with three fake projects |
 | `./scripts/diagrams.sh` (repo root) | Regenerate `docs/img/*.png` and `*.svg` from `docs/diagrams/*.html` |
 
-**Definition of done: `npm run check`, `npm test` and `./scripts/smoke.sh` are all green.** Never commit when one fails, and never skip hooks or checks to get a commit through.
+**Definition of done: `npm run check`, `npm test` and `./scripts/smoke.sh` are all green — and, when `web/` changed, so are its `npm run check`, `npm test` and `npm run build`.** Never commit when one fails, and never skip hooks or checks to get a commit through.
 
 ## Commits
 
@@ -51,6 +52,15 @@ These are the project's reason to exist. Do not weaken them.
 5. **The orchestrator never executes anything the agent wrote** in its own process. Git runs with explicit `--git-dir/--work-tree`, hooks disabled, `.git` kept outside the mounted directory.
 6. **Validate every API input as hostile**, as `projects.ts` does (https-only repositories, no credentials in URLs, branch names that cannot be git options, allowlists for enums).
 7. **Do not add a production dependency** to the orchestrator without a strong reason; it currently has none.
+
+## Web application (`web/`)
+
+- One folder per page in `src/features/<area>/`; shared pieces in `src/components/{ui,layout,charts}` and `src/lib`. Server data goes through TanStack Query (`src/lib/queries.ts`), never ad-hoc `fetch` in a component.
+- UI text is French. The server's error messages are already French and are shown as they are.
+- Never put a secret in the DOM, a URL or `localStorage`. Role helpers (`src/lib/roles.ts`) only hide or grey out; the server authorizes.
+- Colours come from the CSS variables in `src/styles.css`; do not hard-code colours in components, so both themes keep working. Respect `prefers-reduced-motion`.
+- Link and redirect targets are typed by the router: a new page means a route in `src/router.tsx` (with an `adminOnly` guard when it is admin-only), a nav entry, and a step in `scripts/ui_check.py`.
+- The orchestrator serves `web/dist`; the Docker image builds it. Nothing from `web/` runs on the server.
 
 ## Code conventions
 

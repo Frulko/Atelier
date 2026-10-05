@@ -130,15 +130,18 @@ The recipient opens it and either **creates an account** (the e-mail comes from 
 
 ## The web UI
 
-Everything above is reachable from the browser (the UI text is in French). Admins and owners get a **Settings** tab:
+Everything above is reachable from the browser (the UI text is in French). Pages live under `/o/:org/…`, so a URL always says which organization it shows.
 
-| Card | What you can do |
-|---|---|
-| Members | See everyone, change roles (only roles you may grant are offered), remove a member |
-| Invitations | Create a link (shown once, with a **Copy** button), see pending ones, revoke |
-| Projects | List, add (repository, branch, check command, protected paths, git token), delete |
-| Secrets | Store git tokens and model keys (the value is never shown again), delete |
-| Budget | See this month's spend, set or clear the monthly cap |
+| Page | Who | What you can do |
+|---|---|---|
+| Overview | everyone | Success rate, activity, spend, per-project figures, live tasks, recent activity |
+| Tasks | everyone | Filter (status, project, member, text, dates), start a task, follow it live, retry, cancel |
+| Projects | read: everyone · manage: admin+ | Create, edit, delete, **check access** to the repository, see recent tasks and figures |
+| Team | admin+ | Members and roles, removal and leaving, invitations (the link is shown once, with **Copy**), revocation |
+| Integrations | admin+ | Git tokens and model keys: add, rename, rotate, delete; which projects use each, last use |
+| Usage | admin+ | Monthly budget with projection, spend and calls per day, per member, project and provider |
+| Audit log | admin+ | Who did what, with filters, CSV export |
+| Organization | admin+ (delete: owner) | Rename, identifier, deletion with the exact name |
+| Account | everyone | Display name, password, active sessions, theme, your recent activity |
 
-Everyone gets the organization picker, **New organization** and **My account** (password change). Opening an invitation link (`/?invite=…`) shows a page to create the account — or to join with the account you are signed in with. Destructive actions ask for a second click instead of a browser dialog. Buttons the server would refuse are greyed out, but the server is what decides.
-
+The invitation page lives at `/invite?token=…`: it creates the account, or joins with the account you are signed in with. The organization picker and **New organization** are in the sidebar. Destructive actions ask for a second click instead of a browser dialog. Admin pages redirect other roles to the overview and buttons the server would refuse are greyed out — but the server is what decides.

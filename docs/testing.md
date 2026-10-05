@@ -6,6 +6,7 @@ Three commands. All three must be green before a commit.
 |---|---|---|---|
 | `npm run check` | `orchestrator/` | Type-checks the TypeScript (`tsc --noEmit`) | Node |
 | `npm test` | `orchestrator/` | Unit and HTTP integration tests (`node --test`), in-memory database | Node |
+| `npm run check` · `npm test` · `npm run build` | `web/` | Type-checks, runs the unit tests (formatting, roles, wording) and builds the web application | Node |
 | `./scripts/smoke.sh` | repo root | End-to-end test of the whole stack in Docker, **no AI, no API key**. Also drives the web UI in a browser when Playwright is installed | Docker (+ `pip install playwright` and Chrome for the UI part) |
 
 ## What is covered
@@ -25,7 +26,8 @@ Three commands. All three must be green before a commit.
 | Model proxy against a fake provider: missing/wrong/revoked token, each organization's own key, no global fallback, 402 over budget, allowed routes only | `proxy.test.ts` |
 | Budget: month boundaries, per-organization spend, cap semantics, API roles, task creation refused when over budget | `budget.test.ts` |
 | Organizations, members, invitations: privilege escalation, single-use and expiry, hashed token, address match, last owner, cross-organization isolation | `members.test.ts` |
-| **The web UI in a real browser** (Playwright, `scripts/ui_check.py`): login with a wrong then right password, one screen at a time, a task run to "branch pushed", a secret that never reappears in the page, an invitation link opened by a second browser that joins as a member, single-use link, role change, two-click removal, logout, no console error | `smoke.sh` (skipped, with a notice, if Playwright is not installed) |
+| Static serving: files, SPA fallback, **no way out of the public folder** (`../`, encoded, null byte), security headers on every response, no-store API | `static.test.ts` |
+| **The whole web application in a real browser** (Playwright, `scripts/ui_check.py`): sign-in, a task run to "branch pushed" and retried, filters kept in the URL, project creation, access check and deletion, a secret that never reappears in the page, an invitation opened by a second browser that joins as a member and cannot reach admin pages, role change, removal, budget, audit filters and CSV export, organization rename, profile, theme, a phone-sized menu with no horizontal scroll, sign-out | `smoke.sh` (skipped, with a notice, if Playwright is not installed) |
 | Task list filters, pagination bounds, literal text search, timing, retry | `tasks-api.test.ts` |
 | Audit log: what is recorded, who reads it, filters, CSV, **no secret ever in it** | `audit.test.ts` |
 | Dashboard and usage statistics: exact totals, no gaps, windows, roles, isolation | `stats.test.ts` |
@@ -40,7 +42,7 @@ Three commands. All three must be green before a commit.
 - The **real Claude agent** inside the sandbox (proxy + SDK end to end). Only the fake agent runs in tests.
 - A **real GitLab merge request** and a **real GitHub pull request**. Code exists; it has only run against local git repositories.
 - Task **cancellation while an agent is running**.
-- The UI only on **Chrome**, in light mode, at desktop width. Dark mode and phone width have not been looked at.
+- The UI on **Firefox and Safari**: the browser test runs Chrome only. Dark mode is toggled and a phone-sized layout is exercised, but not compared pixel by pixel.
 - Docker-level isolation guarantees (resource limits, dropped capabilities) are configured but not asserted.
 
 ## The fake agent and the fake projects

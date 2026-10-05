@@ -34,6 +34,7 @@ Atelier is configured through environment variables (see [`.env.example`](../.en
 | `PORT`, `PROXY_PORT` | `8080`, `8081` | Orchestrator and proxy listening ports |
 | `DB_FILE` | `/data/atelier.db` | SQLite file |
 | `SANDBOX_IMAGE`, `SANDBOX_NETWORK`, `PROXY_URL` | see `config.ts` | Sandbox image, its internal network, and the proxy address as seen from it |
+| `PUBLIC_DIR` | `web/dist` (the image sets `/app/public`) | Where the built web application is served from |
 | `ATELIER_FAKE_AGENT` | off | `1` uses the deterministic fake agent (demo and tests) |
 
 ### First-start import only
