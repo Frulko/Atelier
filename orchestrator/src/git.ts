@@ -90,3 +90,28 @@ export async function openMergeRequest(p: Project, branch: string, title: string
 }
 
 export const cleanup = (taskId: string) => rm(workspace(taskId).root, { recursive: true, force: true });
+
+/** Retire toute trace d'un secret d'un message d'erreur avant de le montrer. */
+export const scrub = (text: string, secrets: string[]) =>
+  secrets.filter((x) => x.length >= 4).reduce((t, x) => t.split(x).join("***"), text);
+
+export type AccessCheck = { ok: boolean; branchFound: boolean; error?: "auth" | "not_found" | "timeout" | "unreachable"; detail?: string; ms: number };
+
+/**
+ * « Vérifier l'accès » : git ls-remote, sans rien cloner. Dit si le dépôt répond avec le jeton du projet et si la
+ * branche existe. Le message d'erreur est nettoyé du jeton et plafonné.
+ */
+export async function verifyAccess(p: Project): Promise<AccessCheck> {
+  const t0 = Date.now();
+  try {
+    const { stdout } = await run("git", ["ls-remote", "--heads", "--", p.repo, `refs/heads/${p.branch}`], { env: gitEnv(p.token, p.forge), timeout: 20_000, maxBuffer: 1e6 });
+    return { ok: true, branchFound: stdout.includes(`refs/heads/${p.branch}`), ms: Date.now() - t0 };
+  } catch (e: any) {
+    const text = scrub(String(e.stderr || e.message || ""), [p.token]).slice(0, 300);
+    const error = e.killed || e.signal === "SIGTERM" ? "timeout"
+      : /authentication failed|could not read (username|password)|403|401|invalid credentials|access denied/i.test(text) ? "auth"
+      : /not found|does not exist|404|repository .* not|does not appear to be a git repository/i.test(text) ? "not_found"
+      : "unreachable";
+    return { ok: false, branchFound: false, error, detail: text.trim(), ms: Date.now() - t0 };
+  }
+}

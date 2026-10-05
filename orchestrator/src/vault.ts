@@ -65,11 +65,21 @@ export function storeSecret(orgId: string, kind: SecretKind, provider: string | 
 export function readSecret(orgId: string, secretId: string | null): string | undefined {
   if (!secretId) return undefined;
   const row = db.getSecretRow(secretId, orgId);
-  return row ? decrypt(row.ciphertext, orgId, secretId) : undefined;
+  if (!row) return undefined;
+  db.touchSecret(secretId);
+  return decrypt(row.ciphertext, orgId, secretId);
+}
+
+/** Remplace la valeur d'un secret EN GARDANT son identifiant : les projets qui l'utilisent n'ont rien à changer. */
+export function rotateSecret(orgId: string, secretId: string, value: string): boolean {
+  const hint = value.length >= 12 ? `…${value.slice(-4)}` : "…";
+  return db.updateSecret(secretId, orgId, { ciphertext: encrypt(value, orgId, secretId), hint });
 }
 
 /** Clé de modèle de CETTE organisation pour un fournisseur (la plus récente), ou undefined. Jamais de repli sur une clé globale. */
 export function providerKey(orgId: string, provider: string): string | undefined {
   const row = db.latestProviderSecret(orgId, provider);
-  return row ? decrypt(row.ciphertext, orgId, row.id) : undefined;
+  if (!row) return undefined;
+  db.touchSecret(row.id);
+  return decrypt(row.ciphertext, orgId, row.id);
 }

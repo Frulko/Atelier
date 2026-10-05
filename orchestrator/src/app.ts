@@ -1,7 +1,9 @@
 import http from "node:http";
 import { readFileSync } from "node:fs";
-import { listSessions, deleteSessionByPrefix, setUserName, renameOrg, activeTaskCount, deleteOrgCascade, orgStats, orgUsage, queryAudit, userActivity, getUserById, STATUSES, queryTasks, getTaskDetail, type Status, addEvent, addMember, bus, consumeInvitation, countOrgsOf, countOwners, createOrg, createUser, deleteInvitation, findInvitation, insertInvitation, listInvitations, listMembers, removeMember, setMemberRole, createTask, getOrg, monthSpend, setOrgBudget, deleteProject, deleteSecret, getEvents, getProjectInOrg, getSecretRow, getTask, getTaskInOrg, getUserByEmail, insertProject, listProjects, listSecrets, listTasks, orgsOf, roleOf, secretInUse, updatePassword, updateProject, updateTask, type Evt, type Role, type User } from "./db.ts";
-import { storeSecret } from "./vault.ts";
+import { secretUsers, updateSecret, listSessions, deleteSessionByPrefix, setUserName, renameOrg, activeTaskCount, deleteOrgCascade, orgStats, orgUsage, queryAudit, userActivity, getUserById, STATUSES, queryTasks, getTaskDetail, type Status, addEvent, addMember, bus, consumeInvitation, countOrgsOf, countOwners, createOrg, createUser, deleteInvitation, findInvitation, insertInvitation, listInvitations, listMembers, removeMember, setMemberRole, createTask, getOrg, monthSpend, setOrgBudget, deleteProject, deleteSecret, getEvents, getProjectInOrg, getSecretRow, getTask, getTaskInOrg, getUserByEmail, insertProject, listProjects, listSecrets, listTasks, orgsOf, roleOf, secretInUse, updatePassword, updateProject, updateTask, type Evt, type Role, type User } from "./db.ts";
+import { rotateSecret, storeSecret } from "./vault.ts";
+import { verifyAccess } from "./git.ts";
+import { rowToProject } from "./projects.ts";
 import { audit, auditToCsv } from "./audit.ts";
 import { overBudget } from "./budget.ts";
 import { PROVIDERS } from "./proxy.ts";
@@ -211,7 +213,7 @@ export function createApp() {
       }
 
       // ---- ressources d'une organisation : /api/orgs/:org/...
-      const o = /^\/api\/orgs\/([0-9a-f]{16})\/(projects|tasks|secrets|members|invitations|audit|stats|usage)(?:\/([0-9a-f]{8,16}))?(\/events|\/cancel|\/retry)?$/.exec(url.pathname);
+      const o = /^\/api\/orgs\/([0-9a-f]{16})\/(projects|tasks|secrets|members|invitations|audit|stats|usage)(?:\/([0-9a-f]{8,16}))?(\/events|\/cancel|\/retry|\/verify)?$/.exec(url.pathname);
       if (o) {
         const [, orgId, kind, itemId, sub] = o;
         const deny = (a: Access) => a === "not_found" ? json(res, 404, { error: "introuvable" }) : json(res, 403, { error: "droits insuffisants" });
@@ -320,6 +322,13 @@ export function createApp() {
               return json(res, 409, { error: "ce slug existe déjà" });
             }
           }
+          if (itemId && sub === "/verify" && req.method === "POST") {
+            const row = getProjectInOrg(itemId, orgId);
+            if (!row) return json(res, 404, { error: "introuvable" });
+            const result = await verifyAccess(rowToProject(row));
+            log("project.verify", { type: "project", id: itemId }, { ok: result.ok, branchFound: result.branchFound, error: result.error });
+            return json(res, 200, result);
+          }
           if (itemId && !sub) {
             if (!getProjectInOrg(itemId, orgId)) return json(res, 404, { error: "introuvable" });
             if (req.method === "PATCH") {
@@ -357,7 +366,23 @@ export function createApp() {
         if (kind === "secrets") {
           const a = gate("secret:manage");
           if (typeof a === "string") return deny(a);
-          if (req.method === "GET" && !itemId) return json(res, 200, listSecrets(orgId));
+          if (req.method === "GET" && !itemId) {
+            const users = secretUsers(orgId);
+            return json(res, 200, listSecrets(orgId).map((x) => ({ ...x, usedBy: users[x.id] ?? [] })));
+          }
+          if (req.method === "PATCH" && itemId && !sub) {
+            const cur = getSecretRow(itemId, orgId);
+            if (!cur) return json(res, 404, { error: "introuvable" });
+            const { label, value } = await body(req);
+            if (label === undefined && value === undefined) return json(res, 400, { error: "rien à modifier" });
+            if (label !== undefined && (typeof label !== "string" || !label.trim() || label.length > 80)) return json(res, 400, { error: "libellé invalide" });
+            if (value !== undefined && (typeof value !== "string" || !value.trim() || value.length > 500)) return json(res, 400, { error: "valeur invalide" });
+            if (label !== undefined) updateSecret(itemId, orgId, { label: label.trim() });
+            if (value !== undefined) rotateSecret(orgId, itemId, value.trim());
+            log("secret.update", { type: "secret", id: itemId }, { kind: cur.kind, provider: cur.provider, label: label !== undefined ? label.trim() : cur.label, rotated: value !== undefined }); // jamais la valeur
+            const now = listSecrets(orgId).find((x) => x.id === itemId)!;
+            return json(res, 200, { ...now, usedBy: secretUsers(orgId)[itemId] ?? [] });
+          }
           if (req.method === "POST" && !itemId) {
             const { kind: k, provider, label, value } = await body(req);
             if (k !== "git_token" && k !== "provider_key") return json(res, 400, { error: "type de secret invalide" });

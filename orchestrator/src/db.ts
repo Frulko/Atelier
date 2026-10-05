@@ -92,6 +92,8 @@ if (!taskCols.includes("finished_at")) db.exec("alter table tasks add column fin
 if (!taskCols.includes("files_json")) db.exec("alter table tasks add column files_json text");
 if (!taskCols.includes("flagged")) db.exec("alter table tasks add column flagged integer not null default 0");
 db.exec("create index if not exists tasks_org on tasks(org_id, created_at)");
+const secretCols = (db.prepare("pragma table_info(secrets)").all() as { name: string }[]).map((c) => c.name);
+if (!secretCols.includes("last_used_at")) db.exec("alter table secrets add column last_used_at integer");
 const userCols = (db.prepare("pragma table_info(users)").all() as { name: string }[]).map((c) => c.name);
 if (!userCols.includes("name")) db.exec("alter table users add column name text");
 const sessCols = (db.prepare("pragma table_info(sessions)").all() as { name: string }[]).map((c) => c.name);
@@ -262,17 +264,36 @@ export const setMeta = (key: string, value: string) =>
 
 /* --------------------------------- secrets --------------------------------- */
 
-export type SecretRow = { id: string; org_id: string; kind: "git_token" | "provider_key"; provider: string | null; label: string; hint: string; ciphertext: Buffer; created_at: number };
+export type SecretRow = { id: string; org_id: string; kind: "git_token" | "provider_key"; provider: string | null; label: string; hint: string; ciphertext: Buffer; created_at: number; last_used_at: number | null };
 export type SecretMeta = Omit<SecretRow, "ciphertext" | "org_id">;
 
 export const newSecretId = () => rid();
-export const insertSecret = (s: Omit<SecretRow, "created_at">) =>
+export const insertSecret = (s: Omit<SecretRow, "created_at" | "last_used_at">) =>
   void db.prepare("insert into secrets (id, org_id, kind, provider, label, hint, ciphertext, created_at) values (?,?,?,?,?,?,?,?)")
     .run(s.id, s.org_id, s.kind, s.provider, s.label, s.hint, s.ciphertext, Date.now());
 
 /** Liste SANS le chiffré : l'API ne peut pas le divulguer, même par erreur. */
 export const listSecrets = (orgId: string) =>
-  db.prepare("select id, kind, provider, label, hint, created_at from secrets where org_id = ? order by created_at").all(orgId) as SecretMeta[];
+  db.prepare("select id, kind, provider, label, hint, created_at, last_used_at from secrets where org_id = ? order by created_at").all(orgId) as SecretMeta[];
+
+/** Quels projets utilisent chaque secret comme jeton git (pour la page « Intégrations »). */
+export const secretUsers = (orgId: string) => {
+  const by: Record<string, { id: string; name: string }[]> = {};
+  for (const r of db.prepare("select git_secret_id as sid, id, name from projects where org_id = ? and git_secret_id is not null order by name").all(orgId) as { sid: string; id: string; name: string }[])
+    (by[r.sid] ??= []).push({ id: r.id, name: r.name });
+  return by;
+};
+
+/** Au plus une écriture par minute et par secret. */
+export const touchSecret = (id: string, now = Date.now()) =>
+  void db.prepare("update secrets set last_used_at = ? where id = ? and (last_used_at is null or last_used_at < ?)").run(now, id, now - 60_000);
+
+export const updateSecret = (id: string, orgId: string, p: { label?: string; hint?: string; ciphertext?: Buffer }) => {
+  const keys = Object.keys(p) as (keyof typeof p)[];
+  if (!keys.length) return false;
+  return db.prepare(`update secrets set ${keys.map((k) => `${k} = ?`).join(", ")} where id = ? and org_id = ?`)
+    .run(...keys.map((k) => p[k] as string | Buffer), id, orgId).changes > 0;
+};
 
 export const getSecretRow = (id: string, orgId: string) =>
   db.prepare("select * from secrets where id = ? and org_id = ?").get(id, orgId) as SecretRow | undefined;
