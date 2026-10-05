@@ -72,7 +72,12 @@
 html { font-family: var(--font-sans); font-size: 15px; background: var(--paper); color: var(--ink); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; font-feature-settings: "cv11", "ss01"; }
 body { margin: 0; min-height: 100vh; background: var(--paper); }
 ::selection { background: color-mix(in srgb, var(--accent) 28%, transparent); }
-:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 70%, transparent); outline-offset: 2px; border-radius: 6px; }
+/* Dans @layer base : les classes utilitaires (outline-none, ring-…) des composants shadcn / AI Elements l'emportent, sinon on
+   voit deux contours. La zone de saisie du chat dessine elle-même son contour de focus autour du groupe. */
+@layer base {
+  :focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 70%, transparent); outline-offset: 2px; border-radius: 6px; }
+  [data-slot="input-group-control"]:focus-visible { outline: none; }
+}
 .tnum { font-variant-numeric: tabular-nums lining-nums; }
 
 @layer components {
