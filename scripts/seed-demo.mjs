@@ -1,14 +1,21 @@
 // Remplit une démo avec de la matière réaliste : des membres, 45 jours d'historique de tâches, des appels de modèles,
 // un journal d'audit. S'exécute DANS le conteneur de l'orchestrateur (il réutilise ses modules) :
 //   docker exec -i atelier-orchestrator node - < scripts/seed-demo.mjs
-// Idempotent : ne fait rien si l'organisation a déjà de l'historique. Données factices : jamais en production.
+// Idempotent : ne fait rien si l'organisation a déjà de l'historique (SEED_RESET=1 pour repartir de zéro). Données factices : jamais en production.
 const db = await import("/app/src/db.ts");
 const { hashPassword } = await import("/app/src/auth.ts");
 const { audit } = await import("/app/src/audit.ts");
 
 const org = db.firstOrgId();
 if (!org) { console.log("Pas d'organisation : rien à amorcer."); process.exit(0); }
-if (db.queryTasks(org).total >= 12) { console.log("Historique déjà présent : rien à faire."); process.exit(0); }
+if (process.env.SEED_RESET === "1") {
+  // Repartir de zéro (démo seulement) : efface l'historique de l'organisation, garde les comptes.
+  const { DatabaseSync } = await import("node:sqlite");
+  const raw = new DatabaseSync(process.env.DB_FILE || "/data/atelier.db");
+  raw.prepare("delete from events where task_id in (select id from tasks where org_id = ?)").run(org);
+  for (const t of ["tasks", "proxy_calls", "audit_log"]) raw.prepare(`delete from ${t} where org_id = ?`).run(org);
+  raw.close();
+} else if (db.queryTasks(org).total >= 12) { console.log("Historique déjà présent : rien à faire."); process.exit(0); }
 
 const DAY = 86_400_000, now = Date.now();
 let seed = 20261005;
@@ -51,19 +58,22 @@ for (let age = 44; age >= 0; age--) {
     db.updateTask(id, { status, cost, started_at: Math.min(created, now - 60_000) + 2000, finished_at: Math.min(created, now - 60_000) + 2000 + secs * 1000, branch: status === "done" ? `atelier/${id}` : null, files_json: files.length ? JSON.stringify(files) : null, flagged: files.includes("cantine.js") ? 1 : 0 });
     for (const [t, text] of [["step", "Demande reçue, en file d'attente."], ["step", "Copie du projet dans le bac à sable…"], ["step", "L'agent travaille…"], ["text", "J'ai préparé la modification demandée."], ["step", "Vérification du projet…"], [status === "failed" ? "error" : "done", status === "failed" ? "La vérification échoue encore après les corrections." : status === "done" ? `Branche atelier/${id} envoyée.` : "Terminé."]])
       db.addEvent(id, t, text);
-    for (let c = 0; c < 2 + Math.floor(rnd() * 5); c++) db.recordProxyCall(org, id, rnd() < 0.9 ? "anthropic" : "openai", rnd() < 0.04 ? 529 : 200);
-    if (rnd() < 0.5) audit({ orgId: org, userId: user.id, ip: "10.0.0." + (2 + Math.floor(rnd() * 20)) }, "task.create", { type: "task", id }, { project: project.name });
+    const at = Math.min(created, now - 60_000);
+    for (let c = 0; c < 2 + Math.floor(rnd() * 5); c++) db.recordProxyCall(org, id, rnd() < 0.9 ? "anthropic" : "openai", rnd() < 0.04 ? 529 : 200, at + 3000 + c * 20_000);
+    audit({ orgId: org, userId: user.id, ip: "10.0.0." + (2 + Math.floor(rnd() * 20)), ts: at }, "task.create", { type: "task", id }, { project: project.name });
+    if (status === "cancelled") audit({ orgId: org, userId: user.id, ip: "10.0.0.5", ts: at + 30_000 }, "task.cancel", { type: "task", id });
   }
 }
 db.setOrgBudget(org, 150);
 
-// quelques événements d'administration, datés de façon plausible
+// quelques événements d'administration, datés de façon plausible (un tous les trois jours environ)
 const admin = users[1];
-for (const [action, target, meta, userId] of [
+[
   ["member.role", { type: "user", id: users[2].id }, { email: users[2].email, from: "viewer", to: "member" }, owner.id],
   ["invitation.create", { type: "invitation", id: "x1" }, { email: "nouveau@demo.test", role: "member" }, admin.id],
   ["project.update", { type: "project", id: projects[0].id }, { fields: ["check", "protectedPaths"] }, admin.id],
   ["org.budget_set", { type: "org", id: org }, { budgetUsdMonth: 150 }, owner.id],
-]) audit({ orgId: org, userId, ip: "10.0.0.5" }, action, target, meta);
+].forEach(([action, target, meta, userId], i) =>
+  audit({ orgId: org, userId, ip: "10.0.0.5", ts: now - (i + 1) * 3 * DAY - 2 * 3_600_000 }, action, target, meta));
 
 console.log(`Démo amorcée : ${n} tâches sur 45 jours, ${users.length} membres, budget 150 $.`);

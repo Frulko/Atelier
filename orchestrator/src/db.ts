@@ -455,8 +455,8 @@ export const userActivity = (userId: string, limit = 50) =>
 
 /* ------------------------------ statistiques et usage ------------------------------ */
 
-export const recordProxyCall = (orgId: string, taskId: string, provider: string, status: number) =>
-  void db.prepare("insert into proxy_calls (ts, org_id, task_id, provider, status) values (?,?,?,?,?)").run(Date.now(), orgId, taskId, provider, status);
+export const recordProxyCall = (orgId: string, taskId: string, provider: string, status: number, ts = Date.now()) =>
+  void db.prepare("insert into proxy_calls (ts, org_id, task_id, provider, status) values (?,?,?,?,?)").run(ts, orgId, taskId, provider, status);
 
 const DAY = 86400_000;
 /** Début (UTC) de la fenêtre de `days` jours finissant aujourd'hui, et fin exclusive (demain 00:00 UTC). */

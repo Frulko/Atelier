@@ -26,8 +26,9 @@ const body = (req: http.IncomingMessage) => new Promise<any>((ok, ko) => {
 
 // Derrière un reverse proxy (HTTPS), TRUST_PROXY=1 : on lit l'IP et le schéma dans X-Forwarded-*.
 const trustProxy = process.env.TRUST_PROXY === "1";
+// « ::ffff:1.2.3.4 » est une adresse IPv4 vue par une socket IPv6 : on la montre comme l'adresse IPv4 qu'elle est.
 const clientIp = (req: http.IncomingMessage) =>
-  (trustProxy ? String(req.headers["x-forwarded-for"] ?? "").split(",")[0].trim() : "") || req.socket.remoteAddress || "?";
+  ((trustProxy ? String(req.headers["x-forwarded-for"] ?? "").split(",")[0].trim() : "") || req.socket.remoteAddress || "?").replace(/^::ffff:/i, "");
 const isSecure = (req: http.IncomingMessage) =>
   process.env.COOKIE_SECURE === "1" || (trustProxy && req.headers["x-forwarded-proto"] === "https");
 

@@ -6,7 +6,8 @@ import { insertAudit, type AuditRow } from "./db.ts";
  * RÈGLE : `meta` ne contient JAMAIS de secret (valeur d'un jeton, mot de passe, lien d'invitation) : des noms,
  * des rôles, des adresses e-mail, des identifiants. Un test parcourt le journal à la recherche de ces valeurs.
  */
-export type AuditCtx = { orgId?: string | null; userId?: string | null; ip?: string };
+/** `ts` : date de l'événement, pour amorcer une démo avec un historique ; par défaut, maintenant. */
+export type AuditCtx = { orgId?: string | null; userId?: string | null; ip?: string; ts?: number };
 type Meta = Record<string, string | number | boolean | null | undefined | string[]>;
 
 export function audit(ctx: AuditCtx, action: string, target?: { type: string; id: string }, meta?: Meta) {
@@ -17,7 +18,7 @@ export function audit(ctx: AuditCtx, action: string, target?: { type: string; id
   }
   const json = Object.keys(clean).length ? JSON.stringify(clean).slice(0, 1000) : null;
   insertAudit({
-    ts: Date.now(), org_id: ctx.orgId ?? null, user_id: ctx.userId ?? null, action,
+    ts: ctx.ts ?? Date.now(), org_id: ctx.orgId ?? null, user_id: ctx.userId ?? null, action,
     target_type: target?.type ?? null, target_id: target?.id ?? null, meta: json, ip: ctx.ip ?? null,
   });
 }

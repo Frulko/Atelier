@@ -60,6 +60,11 @@ test("sessions : la liste montre navigateur, adresse et session courante ; jamai
   assert.equal(fromPhone.find((x) => x.current)!.userAgent, "PhoneBrowser/2.0");
 });
 
+test("sessions : l'adresse IP est lisible (IPv4 vue par une socket IPv6, sans le préfixe ::ffff:)", async () => {
+  const list = (await (await call(cMax, "GET", "/api/me/sessions")).json()) as { ip: string }[];
+  assert.ok(list.length > 0 && list.every((x) => x.ip && !x.ip.toLowerCase().startsWith("::ffff:")), JSON.stringify(list.map((x) => x.ip)));
+});
+
 test("sessions : révoquer une autre session la déconnecte ; on ne peut pas révoquer celle d'un autre compte", async () => {
   const phone = await login("max@a.fr", "PhoneBrowser/3.0");
   const mine = (await (await call(cMax, "GET", "/api/me/sessions")).json()) as { id: string; userAgent: string }[];
