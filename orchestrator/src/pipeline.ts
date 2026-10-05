@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
-import { cfg, type Project } from "./config.ts";
-import { addEvent, getTask, updateTask } from "./db.ts";
+import { cfg } from "./config.ts";
+import { addEvent, getProjectById, getTask, updateTask } from "./db.ts";
+import { rowToProject } from "./projects.ts";
 import { clone, changedFiles, commitAndPush, openMergeRequest, cleanup } from "./git.ts";
 import { runAgent, runCheck, kill } from "./sandbox.ts";
 
@@ -17,9 +18,9 @@ export const cancel = (id: string) => {
 
 // File d'attente : une tâche à la fois (suffisant pour une petite équipe).
 let queue: Promise<unknown> = Promise.resolve();
-export const enqueue = (p: Project, id: string) => { queue = queue.then(() => execute(p, id)).catch(() => {}); };
+export const enqueue = (id: string) => { queue = queue.then(() => execute(id)).catch(() => {}); };
 
-async function execute(p: Project, id: string) {
+async function execute(id: string) {
   const task = getTask(id)!;
   if (task.status === "cancelled") return;
   const log = (type: string, text: string) => addEvent(id, type, text);
@@ -27,6 +28,9 @@ async function execute(p: Project, id: string) {
   let cost = 0;
   try {
     updateTask(id, { status: "running", branch });
+    const row = getProjectById(task.project);
+    if (!row) throw new Error("Projet introuvable (supprimé ?).");
+    const p = rowToProject(row); // déchiffre le token git ici, le temps de la tâche
     log("step", "Copie du projet dans le bac à sable…");
     const ws = await clone(p, id, branch);
 

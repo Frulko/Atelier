@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { cfg, projectToken, type Project } from "./config.ts";
+import { cfg, type Project } from "./config.ts";
 
 const run = promisify(execFile);
 
@@ -41,7 +41,7 @@ const git = async (ws: Workspace, args: string[], token = "", forge: Project["fo
 export async function clone(p: Project, taskId: string, branch: string): Promise<Workspace> {
   const ws = workspace(taskId);
   await mkdir(ws.root, { recursive: true });
-  await run("git", ["clone", "--quiet", "--separate-git-dir", ws.gitdir, "--branch", p.branch, p.repo, ws.tree], { env: gitEnv(projectToken(p), p.forge) });
+  await run("git", ["clone", "--quiet", "--separate-git-dir", ws.gitdir, "--branch", p.branch, p.repo, ws.tree], { env: gitEnv(p.token, p.forge) });
   await rm(join(ws.tree, ".git"), { force: true }); // l'agent ne voit pas le git
   await git(ws, ["checkout", "--quiet", "-b", branch]);
   // uid 1000 = utilisateur "node" du bac à sable
@@ -59,7 +59,7 @@ export async function changedFiles(ws: Workspace): Promise<string[]> {
 
 export async function commitAndPush(p: Project, ws: Workspace, branch: string, message: string) {
   await git(ws, ["-c", `user.name=${cfg.gitAuthorName}`, "-c", `user.email=${cfg.gitAuthorEmail}`, "commit", "--quiet", "-m", message]);
-  await git(ws, ["push", "--quiet", "origin", branch], projectToken(p), p.forge);
+  await git(ws, ["push", "--quiet", "origin", branch], p.token, p.forge);
 }
 
 /** Ouvre la MR (GitLab, y compris auto-hébergé) ou la PR (GitHub, y compris Enterprise). Rend son URL. */
@@ -67,7 +67,7 @@ export async function openMergeRequest(p: Project, branch: string, title: string
   if (p.forge === "none") return null;
   const u = new URL(p.repo);
   const path = u.pathname.replace(/^\/|\.git$/g, "");
-  const token = projectToken(p);
+  const token = p.token;
 
   if (p.forge === "github") {
     const api = u.hostname === "github.com" ? "https://api.github.com" : `${u.origin}/api/v3`;

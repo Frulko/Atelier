@@ -5,6 +5,7 @@ import { cfg } from "./config.ts";
 
 export type Status = "queued" | "running" | "done" | "no_changes" | "failed" | "cancelled";
 export type Task = {
+  project_name?: string | null;
   id: string; org_id: string | null; user_id: string | null; project: string; prompt: string; status: Status;
   branch: string | null; mr_url: string | null; cost: number; created_at: number;
 };
@@ -37,6 +38,19 @@ db.exec(`
     role text not null check (role in ('owner','admin','member','viewer')),
     primary key (org_id, user_id)
   );
+  create table if not exists meta (key text primary key, value text not null);
+  create table if not exists secrets (
+    id text primary key, org_id text not null references orgs(id) on delete cascade,
+    kind text not null check (kind in ('git_token','provider_key')), provider text,
+    label text not null, hint text not null, ciphertext blob not null, created_at integer not null
+  );
+  create table if not exists projects (
+    id text primary key, org_id text not null references orgs(id) on delete cascade,
+    slug text not null, name text not null, repo text not null, branch text not null,
+    forge text not null, check_cmd text not null, engine text not null, protected_paths text not null,
+    git_secret_id text references secrets(id), created_at integer not null,
+    unique (org_id, slug)
+  );
   create table if not exists sessions (
     token_hash text primary key, user_id text not null references users(id) on delete cascade,
     created_at integer not null, expires_at integer not null
@@ -66,7 +80,7 @@ export const getTaskInOrg = (id: string, orgId: string) =>
   db.prepare("select * from tasks where id = ? and org_id = ?").get(id, orgId) as Task | undefined;
 
 export const listTasks = (orgId: string) =>
-  db.prepare("select * from tasks where org_id = ? order by created_at desc limit 50").all(orgId) as Task[];
+  db.prepare("select t.*, p.name as project_name from tasks t left join projects p on p.id = t.project where t.org_id = ? order by t.created_at desc limit 50").all(orgId) as Task[];
 
 /** Tâches d'avant les organisations : rattachées à l'organisation donnée (une seule fois, au démarrage). */
 export const adoptOrphanTasks = (orgId: string) =>
@@ -159,3 +173,73 @@ export const purgeExpiredSessions = () =>
 
 export const firstOrgId = () =>
   (db.prepare("select id from orgs order by created_at, id limit 1").get() as { id: string } | undefined)?.id;
+
+/* ---------------------------------- meta ---------------------------------- */
+
+export const getMeta = (key: string) =>
+  (db.prepare("select value from meta where key = ?").get(key) as { value: string } | undefined)?.value;
+export const setMeta = (key: string, value: string) =>
+  void db.prepare("insert into meta (key, value) values (?,?) on conflict(key) do update set value = excluded.value").run(key, value);
+
+/* --------------------------------- secrets --------------------------------- */
+
+export type SecretRow = { id: string; org_id: string; kind: "git_token" | "provider_key"; provider: string | null; label: string; hint: string; ciphertext: Buffer; created_at: number };
+export type SecretMeta = Omit<SecretRow, "ciphertext" | "org_id">;
+
+export const newSecretId = () => rid();
+export const insertSecret = (s: Omit<SecretRow, "created_at">) =>
+  void db.prepare("insert into secrets (id, org_id, kind, provider, label, hint, ciphertext, created_at) values (?,?,?,?,?,?,?,?)")
+    .run(s.id, s.org_id, s.kind, s.provider, s.label, s.hint, s.ciphertext, Date.now());
+
+/** Liste SANS le chiffré : l'API ne peut pas le divulguer, même par erreur. */
+export const listSecrets = (orgId: string) =>
+  db.prepare("select id, kind, provider, label, hint, created_at from secrets where org_id = ? order by created_at").all(orgId) as SecretMeta[];
+
+export const getSecretRow = (id: string, orgId: string) =>
+  db.prepare("select * from secrets where id = ? and org_id = ?").get(id, orgId) as SecretRow | undefined;
+
+export const secretInUse = (id: string) =>
+  !!db.prepare("select 1 from projects where git_secret_id = ?").get(id);
+
+export const deleteSecret = (id: string, orgId: string) =>
+  db.prepare("delete from secrets where id = ? and org_id = ?").run(id, orgId).changes > 0;
+
+/* --------------------------------- projets --------------------------------- */
+
+export type ProjectRow = {
+  id: string; org_id: string; slug: string; name: string; repo: string; branch: string; forge: "gitlab" | "github" | "none";
+  check_cmd: string; engine: string; protected_paths: string; git_secret_id: string | null; created_at: number;
+};
+
+export function insertProject(p: Omit<ProjectRow, "id" | "created_at">): string {
+  const id = rid();
+  db.prepare("insert into projects (id, org_id, slug, name, repo, branch, forge, check_cmd, engine, protected_paths, git_secret_id, created_at) values (?,?,?,?,?,?,?,?,?,?,?,?)")
+    .run(id, p.org_id, p.slug, p.name, p.repo, p.branch, p.forge, p.check_cmd, p.engine, p.protected_paths, p.git_secret_id, Date.now());
+  return id;
+}
+
+export const listProjects = (orgId: string) =>
+  db.prepare("select * from projects where org_id = ? order by name").all(orgId) as ProjectRow[];
+
+export const getProjectInOrg = (id: string, orgId: string) =>
+  db.prepare("select * from projects where id = ? and org_id = ?").get(id, orgId) as ProjectRow | undefined;
+
+/** Pour le pipeline (code de confiance, la tâche a déjà été rattachée à une organisation). */
+export const getProjectById = (id: string) =>
+  db.prepare("select * from projects where id = ?").get(id) as ProjectRow | undefined;
+
+export function updateProject(id: string, orgId: string, patch: Partial<Omit<ProjectRow, "id" | "org_id" | "created_at">>) {
+  const keys = Object.keys(patch);
+  if (!keys.length) return false;
+  return db.prepare(`update projects set ${keys.map((k) => `${k} = ?`).join(", ")} where id = ? and org_id = ?`)
+    .run(...(Object.values(patch) as (string | null)[]), id, orgId).changes > 0;
+}
+
+export const deleteProject = (id: string, orgId: string) =>
+  db.prepare("delete from projects where id = ? and org_id = ?").run(id, orgId).changes > 0;
+
+export const countProjects = () => (db.prepare("select count(*) as n from projects").get() as { n: number }).n;
+
+/** Tâches d'avant U4 : leur champ « project » contenait l'identifiant de la config ; il pointe désormais le projet en base. */
+export const remapTaskProject = (orgId: string, from: string, to: string) =>
+  void db.prepare("update tasks set project = ? where org_id = ? and project = ?").run(to, orgId, from);

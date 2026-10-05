@@ -16,9 +16,12 @@ export type Project = {
   engine: string;
   /** Si le diff touche un de ces préfixes, la MR est marquée "revue humaine requise". */
   protectedPaths: string[];
-  /** Nom de la variable d'environnement qui contient le token git de CE projet (défaut : GIT_TOKEN). */
-  tokenEnv: string;
+  /** Token git DÉCHIFFRÉ, résolu à l'exécution d'une tâche (jamais stocké en clair). */
+  token: string;
 };
+
+/** Projet tel qu'il était décrit dans la configuration M1 ; importé une fois en base (voir bootstrap.ts). */
+export type LegacyProject = Omit<Project, "token"> & { tokenEnv: string };
 
 const env = (k: string, d?: string) => process.env[k] ?? d;
 export const need = (k: string) => {
@@ -27,26 +30,24 @@ export const need = (k: string) => {
   return v;
 };
 
-function loadProjects(): Project[] {
+export const inferForge = (repo: string): Project["forge"] =>
+  /^https?:\/\/(www\.)?github\.com\//.test(repo) ? "github" : /^https?:/.test(repo) ? "gitlab" : "none";
+
+export function loadLegacyProjects(): LegacyProject[] {
   const file = env("PROJECTS_FILE", "/data/projects.json")!;
   const raw = env("PROJECTS_JSON") ?? (existsSync(file) ? readFileSync(file, "utf8") : "[]");
-  return (JSON.parse(raw) as Partial<Project>[]).map((p) => ({
+  return (JSON.parse(raw) as Partial<LegacyProject>[]).map((p) => ({
     id: p.id!,
     name: p.name ?? p.id!,
     repo: p.repo!,
     branch: p.branch ?? "main",
-    forge: p.forge ?? (/^https?:\/\/(www\.)?github\.com\//.test(p.repo!) ? "github" : /^https?:/.test(p.repo!) ? "gitlab" : "none"),
+    forge: p.forge ?? inferForge(p.repo!),
     check: p.check ?? "true",
     engine: p.engine ?? "claude",
     protectedPaths: p.protectedPaths ?? [],
     tokenEnv: p.tokenEnv ?? "GIT_TOKEN",
   }));
 }
-
-/** Relu à chaque appel : ajouter un projet ne demande pas de redémarrage. */
-export const getProjects = loadProjects;
-export const getProject = (id: string) => loadProjects().find((p) => p.id === id);
-export const projectToken = (p: Project) => process.env[p.tokenEnv] ?? "";
 
 export const cfg = {
   port: Number(env("PORT", "8080")),
@@ -65,6 +66,10 @@ export const cfg = {
   sandboxNetwork: env("SANDBOX_NETWORK", "atelier-sandbox")!,
   /** Adresse du proxy Anthropic vue depuis le réseau interne des bacs à sable. */
   proxyUrl: env("PROXY_URL", "http://atelier-orchestrator:8081")!,
+  /** Dépôts locaux (chemins) : réservés aux tests/démo. En production, seuls les dépôts https sont acceptés. */
+  allowLocalRepos: env("ATELIER_ALLOW_LOCAL_REPOS") === "1",
+  /** Liste blanche optionnelle des hôtes git (ex. "gitlab.com,github.com,git.mon-domaine.fr"). Vide = tous. */
+  gitHosts: (env("ATELIER_GIT_HOSTS", "") ?? "").split(",").map((h) => h.trim().toLowerCase()).filter(Boolean),
   agentTimeoutS: Number(env("AGENT_TIMEOUT_S", "900")),
   maxAttempts: Number(env("MAX_ATTEMPTS", "3")),
   maxBudgetUsd: env("MAX_BUDGET_USD", "2")!,

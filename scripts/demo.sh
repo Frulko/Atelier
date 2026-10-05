@@ -10,6 +10,7 @@ cat > "$D/.env" <<ENV
 ATELIER_PASSWORD=demo
 ANTHROPIC_API_KEY=cle-bidon
 ATELIER_FAKE_AGENT=1
+ATELIER_ALLOW_LOCAL_REPOS=1
 ATELIER_WORKDIR=$D/work
 FIXTURES_DIR=$D/fixtures
 PROJECTS_JSON='$(tr -d '\n' < fixtures/projects.json)'

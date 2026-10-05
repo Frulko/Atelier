@@ -1,7 +1,8 @@
 import http from "node:http";
 import { readFileSync } from "node:fs";
-import { getProject, getProjects } from "./config.ts";
-import { addEvent, bus, createTask, getEvents, getTask, getTaskInOrg, getUserByEmail, listTasks, orgsOf, roleOf, updatePassword, updateTask, type Evt, type Role, type User } from "./db.ts";
+import { addEvent, bus, createTask, deleteProject, deleteSecret, getEvents, getProjectInOrg, getSecretRow, getTask, getTaskInOrg, getUserByEmail, insertProject, listProjects, listSecrets, listTasks, orgsOf, roleOf, secretInUse, updatePassword, updateProject, updateTask, type Evt, type Role, type User } from "./db.ts";
+import { storeSecret } from "./vault.ts";
+import { rowToJson, validateProject } from "./projects.ts";
 import { hashPassword, MAX_PASSWORD, passwordProblem, verifyPassword } from "./auth.ts";
 import { cookieHeader, endOtherSessions, endSession, startSession, tokenFromCookie, userFromToken } from "./session.ts";
 import { FailureLimiter } from "./ratelimit.ts";
@@ -93,45 +94,110 @@ export function createApp() {
       }
 
       // ---- ressources d'une organisation : /api/orgs/:org/...
-      const o = /^\/api\/orgs\/([0-9a-f]{16})\/(projects|tasks)(?:\/([0-9a-f]{8})(\/events|\/cancel)?)?$/.exec(url.pathname);
+      const o = /^\/api\/orgs\/([0-9a-f]{16})\/(projects|tasks|secrets)(?:\/([0-9a-f]{8,16}))?(\/events|\/cancel)?$/.exec(url.pathname);
       if (o) {
-        const [, orgId, kind, taskId, sub] = o;
+        const [, orgId, kind, itemId, sub] = o;
         const deny = (a: Access) => a === "not_found" ? json(res, 404, { error: "introuvable" }) : json(res, 403, { error: "droits insuffisants" });
+        const gate = (action: Action) => access(user, orgId, action);
 
-        if (kind === "projects" && req.method === "GET" && !taskId) {
-          const a = access(user, orgId, "task:read");
+        // ---------------- projets
+        if (kind === "projects") {
+          if (req.method === "GET" && !itemId) {
+            const a = gate("task:read");
+            return typeof a === "string" ? deny(a) : json(res, 200, listProjects(orgId).map(rowToJson));
+          }
+          const a = gate("project:manage");
           if (typeof a === "string") return deny(a);
-          // ponytail: projets encore communs à toutes les organisations (config) jusqu'à U4.
-          return json(res, 200, getProjects().map(({ id, name, engine }) => ({ id, name, engine })));
+
+          if (req.method === "POST" && !itemId) {
+            const v = validateProject(await body(req), false);
+            if (!v.ok) return json(res, 400, { error: v.error });
+            const f = v.value as Required<typeof v.value>;
+            if (f.gitSecretId && getSecretRow(f.gitSecretId, orgId)?.kind !== "git_token") return json(res, 400, { error: "secret git introuvable" });
+            try {
+              const id = insertProject({ org_id: orgId, slug: f.slug, name: f.name, repo: f.repo, branch: f.branch, forge: f.forge, check_cmd: f.check, engine: f.engine, protected_paths: JSON.stringify(f.protectedPaths), git_secret_id: f.gitSecretId });
+              return json(res, 201, rowToJson(getProjectInOrg(id, orgId)!));
+            } catch (e) {
+              if (!/UNIQUE/.test(String(e))) throw e;
+              return json(res, 409, { error: "ce slug existe déjà" });
+            }
+          }
+          if (itemId && !sub) {
+            if (!getProjectInOrg(itemId, orgId)) return json(res, 404, { error: "introuvable" });
+            if (req.method === "PATCH") {
+              const v = validateProject(await body(req), true);
+              if (!v.ok) return json(res, 400, { error: v.error });
+              const f = v.value;
+              if (f.gitSecretId && getSecretRow(f.gitSecretId, orgId)?.kind !== "git_token") return json(res, 400, { error: "secret git introuvable" });
+              const patch: Record<string, string | null> = {};
+              if (f.slug !== undefined) patch.slug = f.slug;
+              if (f.name !== undefined) patch.name = f.name;
+              if (f.repo !== undefined) patch.repo = f.repo;
+              if (f.branch !== undefined) patch.branch = f.branch;
+              if (f.forge !== undefined) patch.forge = f.forge;
+              if (f.check !== undefined) patch.check_cmd = f.check;
+              if (f.engine !== undefined) patch.engine = f.engine;
+              if (f.protectedPaths !== undefined) patch.protected_paths = JSON.stringify(f.protectedPaths);
+              if (f.gitSecretId !== undefined) patch.git_secret_id = f.gitSecretId;
+              try { updateProject(itemId, orgId, patch); } catch (e) {
+                if (!/UNIQUE/.test(String(e))) throw e;
+                return json(res, 409, { error: "ce slug existe déjà" });
+              }
+              return json(res, 200, rowToJson(getProjectInOrg(itemId, orgId)!));
+            }
+            if (req.method === "DELETE") { deleteProject(itemId, orgId); return json(res, 200, { ok: true }); }
+          }
         }
 
-        if (kind === "tasks" && !taskId) {
+        // ---------------- secrets (jamais renvoyés en clair, ni après création)
+        if (kind === "secrets") {
+          const a = gate("secret:manage");
+          if (typeof a === "string") return deny(a);
+          if (req.method === "GET" && !itemId) return json(res, 200, listSecrets(orgId));
+          if (req.method === "POST" && !itemId) {
+            const { kind: k, provider, label, value } = await body(req);
+            if (k !== "git_token" && k !== "provider_key") return json(res, 400, { error: "type de secret invalide" });
+            if (k === "provider_key" && !["anthropic", "openai", "openrouter"].includes(provider)) return json(res, 400, { error: "fournisseur invalide" });
+            if (typeof label !== "string" || !label.trim() || label.length > 80) return json(res, 400, { error: "libellé invalide" });
+            if (typeof value !== "string" || !value.trim() || value.length > 500) return json(res, 400, { error: "valeur invalide" });
+            return json(res, 201, storeSecret(orgId, k, k === "provider_key" ? provider : null, label.trim(), value.trim()));
+          }
+          if (req.method === "DELETE" && itemId && !sub) {
+            if (!getSecretRow(itemId, orgId)) return json(res, 404, { error: "introuvable" });
+            if (secretInUse(itemId)) return json(res, 409, { error: "secret utilisé par un projet" });
+            deleteSecret(itemId, orgId);
+            return json(res, 200, { ok: true });
+          }
+        }
+
+        // ---------------- tâches
+        if (kind === "tasks" && !itemId) {
           if (req.method === "GET") {
-            const a = access(user, orgId, "task:read");
+            const a = gate("task:read");
             return typeof a === "string" ? deny(a) : json(res, 200, listTasks(orgId));
           }
           if (req.method === "POST") {
-            const a = access(user, orgId, "task:create");
+            const a = gate("task:create");
             if (typeof a === "string") return deny(a);
             const { project, prompt } = await body(req);
-            const p = typeof project === "string" ? getProject(project) : undefined;
-            if (!p || typeof prompt !== "string" || !prompt.trim()) return json(res, 400, { error: "projet ou demande invalide" });
+            const row = typeof project === "string" ? getProjectInOrg(project, orgId) : undefined; // le projet doit être CELUI de l'organisation
+            if (!row || typeof prompt !== "string" || !prompt.trim()) return json(res, 400, { error: "projet ou demande invalide" });
             const id = newId();
-            createTask(id, orgId, user.id, p.id, prompt.trim());
+            createTask(id, orgId, user.id, row.id, prompt.trim());
             addEvent(id, "step", "Demande reçue, en file d'attente.");
-            enqueue(p, id);
+            enqueue(id);
             return json(res, 201, getTask(id));
           }
         }
 
-        if (kind === "tasks" && taskId) {
-          const a = access(user, orgId, "task:read");
+        if (kind === "tasks" && itemId) {
+          const a = gate("task:read");
           if (typeof a === "string") return deny(a);
-          const task = getTaskInOrg(taskId, orgId); // filtre par l'organisation de la session, pas par l'id seul
+          const task = getTaskInOrg(itemId, orgId); // filtre par l'organisation de la session, pas par l'id seul
           if (!task) return json(res, 404, { error: "introuvable" });
 
           if (req.method === "POST" && sub === "/cancel") {
-            const c = access(user, orgId, task.user_id === user.id ? "task:cancel_own" : "task:cancel_any");
+            const c = gate(task.user_id === user.id ? "task:cancel_own" : "task:cancel_any");
             if (typeof c === "string") return deny(c);
             cancel(task.id);
             if (task.status === "queued") updateTask(task.id, { status: "cancelled" });

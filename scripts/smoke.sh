@@ -12,6 +12,7 @@ ANTHROPIC_API_KEY=cle-bidon
 ATELIER_FAKE_AGENT=1
 ATELIER_WORKDIR=$S/work
 ATELIER_PORT=18080
+ATELIER_ALLOW_LOCAL_REPOS=1
 FIXTURES_DIR=$S/fixtures
 PROJECTS_JSON='$(tr -d '\n' < fixtures/projects.json)'
 ENV
@@ -40,10 +41,15 @@ O=$U/api/orgs/$ORG
 [ "$(code "${A[@]}" $U/api/orgs/0000000000000000/tasks)" = 404 ] || fail "une organisation inconnue/étrangère n'est pas introuvable"
 grep -q HttpOnly "$S/jar" || fail "cookie sans HttpOnly"
 
-# 2. CSRF : même avec un cookie valide, un POST venu d'une autre origine est refusé
-[ "$(code "${A[@]}" -H 'Origin: http://evil.example' $O/tasks -d '{"project":"mini-regie","prompt":"x"}')" = 403 ] || fail "POST inter-origines accepté"
+# Les projets sont en base (importés de la config au 1er démarrage) : on retrouve l'identifiant par le slug.
+pid() { curl -sf "${A[@]}" $O/projects | grep -o '"id":"[0-9a-f]*","slug":"'"$1"'"' | sed 's/"id":"\([0-9a-f]*\)".*/\1/'; }
+[ "$(curl -sf "${A[@]}" $O/projects | grep -o '"slug"' | wc -l | tr -d ' ')" = 3 ] || fail "les 3 projets de la config n'ont pas été importés"
 
-submit() { curl -sf "${A[@]}" $O/tasks -d "{\"project\":\"$1\",\"prompt\":\"$2\"}" | sed 's/.*"id":"\([0-9a-f]*\)".*/\1/'; }
+# 2. CSRF : même avec un cookie valide, un POST venu d'une autre origine est refusé
+BODY="{\"project\":\"$(pid mini-regie)\",\"prompt\":\"x\"}"
+[ "$(code "${A[@]}" -H 'Origin: http://evil.example' $O/tasks -d "$BODY")" = 403 ] || fail "POST inter-origines accepté"
+
+submit() { local body="{\"project\":\"$(pid "$1")\",\"prompt\":\"$2\"}"; curl -sf "${A[@]}" $O/tasks -d "$body" | sed 's/.*"id":"\([0-9a-f]*\)".*/\1/'; }
 wait_done() {
   for i in $(seq 90); do
     ST=$(curl -sf "${A[@]}" $O/tasks/$1 | sed 's/.*"status":"\([a-z_]*\)".*/\1/')

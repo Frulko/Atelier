@@ -17,6 +17,9 @@ services:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       GIT_TOKEN: ${GIT_TOKEN:-}
       PROJECTS_JSON: ${PROJECTS_JSON:-}      # ou un fichier /data/projects.json
+      ATELIER_MASTER_KEY: ${ATELIER_MASTER_KEY:-}            # base64 de 32 octets ; sinon générée dans le volume data
+      ATELIER_ALLOW_LOCAL_REPOS: ${ATELIER_ALLOW_LOCAL_REPOS:-}  # 1 : accepte des dépôts locaux (tests/démo seulement)
+      ATELIER_GIT_HOSTS: ${ATELIER_GIT_HOSTS:-}              # liste blanche d'hôtes git (vide = tous)
       ATELIER_WORKDIR: ${ATELIER_WORKDIR:-/srv/atelier/work}
       ATELIER_FAKE_AGENT: ${ATELIER_FAKE_AGENT:-}
       MAX_BUDGET_USD: ${MAX_BUDGET_USD:-2}
