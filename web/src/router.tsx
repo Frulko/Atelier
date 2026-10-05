@@ -18,6 +18,8 @@ import { TasksPage } from "./features/tasks/TasksPage";
 import { TeamPage } from "./features/team/TeamPage";
 import { UsagePage } from "./features/usage/UsagePage";
 import { meQuery } from "./lib/queries";
+import { atLeast } from "./lib/roles";
+import type { Role } from "./lib/types";
 import { compact, pageNo, safePath, str } from "./lib/search";
 import { NoOrganization } from "./features/auth/NoOrganization";
 
@@ -55,12 +57,19 @@ const orgRoute = createRoute({
   beforeLoad: async ({ context, params, location }) => {
     const me = await context.queryClient.ensureQueryData(meQuery);
     if (!me) throw redirect({ to: "/login", search: { redirect: location.href } });
-    if (!me.orgs.some((o) => o.id === params.orgId)) throw redirect({ to: "/" }); // pas membre : même réponse que « n'existe pas »
+    const mine = me.orgs.find((o) => o.id === params.orgId);
+    if (!mine) throw redirect({ to: "/" }); // pas membre : même réponse que « n'existe pas »
+    return { role: mine.role };
   },
   component: AppShell,
 });
 
-const child = <P extends string>(path: P, component: () => React.JSX.Element, extra: object = {}) => createRoute({ getParentRoute: () => orgRoute, path, component, ...extra });
+// Les pages d'administration renvoient les non-administrateurs vers la vue d'ensemble : le menu les masque déjà,
+// ceci couvre un lien tapé à la main. C'est un confort : le serveur refuse de toute façon (403).
+const adminOnly = ({ context, params }: { context: { role: Role }; params: { orgId: string } }) => {
+  if (!atLeast(context.role, "admin")) throw redirect({ to: "/o/$orgId", params: { orgId: params.orgId } });
+};
+const child = <P extends string>(path: P, component: () => React.JSX.Element) => createRoute({ getParentRoute: () => orgRoute, path, component });
 
 const overviewRoute = createRoute({ getParentRoute: () => orgRoute, path: "/", component: OverviewPage });
 const tasksRoute = createRoute({
@@ -70,14 +79,14 @@ const tasksRoute = createRoute({
 const taskRoute = createRoute({ getParentRoute: () => orgRoute, path: "tasks/$taskId", component: TaskDetailPage });
 const projectsRoute = child("projects", ProjectsPage);
 const projectRoute = createRoute({ getParentRoute: () => orgRoute, path: "projects/$projectId", component: ProjectDetailPage });
-const teamRoute = child("team", TeamPage);
-const integrationsRoute = child("integrations", IntegrationsPage);
-const usageRoute = child("usage", UsagePage);
+const teamRoute = createRoute({ getParentRoute: () => orgRoute, path: "team", component: TeamPage, beforeLoad: adminOnly });
+const integrationsRoute = createRoute({ getParentRoute: () => orgRoute, path: "integrations", component: IntegrationsPage, beforeLoad: adminOnly });
+const usageRoute = createRoute({ getParentRoute: () => orgRoute, path: "usage", component: UsagePage, beforeLoad: adminOnly });
 const auditRoute = createRoute({
-  getParentRoute: () => orgRoute, path: "audit", component: AuditPage,
+  getParentRoute: () => orgRoute, path: "audit", component: AuditPage, beforeLoad: adminOnly,
   validateSearch: (s: Record<string, unknown>) => compact({ action: str(s.action), user: str(s.user), q: str(s.q), from: str(s.from), to: str(s.to), page: pageNo(s.page) }),
 });
-const settingsRoute = child("settings", OrgSettingsPage);
+const settingsRoute = createRoute({ getParentRoute: () => orgRoute, path: "settings", component: OrgSettingsPage, beforeLoad: adminOnly });
 const accountRoute = child("account", AccountPage);
 
 const routeTree = rootRoute.addChildren([

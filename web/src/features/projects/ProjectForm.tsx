@@ -43,7 +43,7 @@ export function ProjectForm({ project, onDone, onCancel }: { project?: Project; 
         <Field label="Nom affiché">{(id) => <Input id={id} value={name} maxLength={80} required autoFocus onChange={(e) => { setName(e.target.value); if (!slugTouched) setSlug(slugify(e.target.value)); }} />}</Field>
         <Field label="Identifiant" hint="Minuscules, chiffres et tirets.">{(id) => <Input id={id} value={slug} required pattern="[a-z0-9][a-z0-9\-]{0,39}" onChange={(e) => { setSlug(e.target.value); setSlugTouched(true); }} className="font-mono text-[13px]" />}</Field>
       </div>
-      <Field label="Dépôt git" hint="URL https, sans identifiants : le jeton se règle plus bas.">{(id) => <Input id={id} type="url" value={repo} required placeholder="https://gitlab.exemple.fr/equipe/projet.git" onChange={(e) => setRepo(e.target.value)} className="font-mono text-[13px]" />}</Field>
+      <Field label="Dépôt git" hint="URL https, sans identifiants : le jeton se règle plus bas.">{(id) => <Input id={id} type="text" inputMode="url" autoCapitalize="off" spellCheck={false} value={repo} required placeholder="https://gitlab.exemple.fr/equipe/projet.git" onChange={(e) => setRepo(e.target.value)} className="font-mono text-[13px]" />}</Field>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Branche de base">{(id) => <Input id={id} value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="main" className="font-mono text-[13px]" />}</Field>
         <Field label="Forge" hint="Laisse « Automatique » pour la déduire de l'URL.">
