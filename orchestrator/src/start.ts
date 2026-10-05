@@ -1,4 +1,4 @@
-import { addEvent, createTask, insertConversation, insertMessage, type ProjectRow } from "./db.ts";
+import { addEvent, createTask, insertConversation, insertMessage, updateTask, getTask, type ProjectRow } from "./db.ts";
 import { enqueue, newId } from "./pipeline.ts";
 import { titleFrom } from "./chat.ts";
 
@@ -15,4 +15,15 @@ export function startTask(o: { orgId: string; userId: string; project: ProjectRo
   insertMessage(conversationId, "user", [{ type: "text", text: o.prompt }]);
   enqueue(taskId);
   return { taskId, conversationId };
+}
+
+export const MAX_TURNS = 10;
+
+/** Ajustement d'une tâche terminée : un tour de plus de l'agent, sur la même branche. Le message devient celui de la conversation. */
+export function followUp(taskId: string, conversationId: string, text: string) {
+  const turn = getTask(taskId)!.turn + 1;
+  insertMessage(conversationId, "user", [{ type: "text", text }]);
+  updateTask(taskId, { status: "queued", turn, followup: text, finished_at: null });
+  addEvent(taskId, "step", `Demande d'ajustement (tour ${turn}), en file d'attente.`);
+  enqueue(taskId);
 }

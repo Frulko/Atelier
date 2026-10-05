@@ -12,9 +12,11 @@ export type Task = {
   started_at: number | null; finished_at: number | null;
   /** Chemins modifiés (JSON, 200 au plus) et nombre d'entre eux qui touchent un chemin protégé. */
   files_json: string | null; flagged: number;
+  /** Tour de l'agent en cours ou dernier (1 = la demande initiale) et la demande de ce tour quand c'est un ajustement. */
+  turn: number; followup: string | null;
   user_email?: string | null;
 };
-export type Evt = { id: number; task_id: string; ts: number; type: string; text: string };
+export type Evt = { id: number; task_id: string; ts: number; type: string; text: string; turn?: number };
 
 const db = new DatabaseSync(cfg.dbFile);
 db.exec(`
@@ -112,6 +114,10 @@ if (!taskCols.includes("started_at")) db.exec("alter table tasks add column star
 if (!taskCols.includes("finished_at")) db.exec("alter table tasks add column finished_at integer");
 if (!taskCols.includes("files_json")) db.exec("alter table tasks add column files_json text");
 if (!taskCols.includes("flagged")) db.exec("alter table tasks add column flagged integer not null default 0");
+if (!taskCols.includes("turn")) db.exec("alter table tasks add column turn integer not null default 1");
+if (!taskCols.includes("followup")) db.exec("alter table tasks add column followup text");
+const eventCols = (db.prepare("pragma table_info(events)").all() as { name: string }[]).map((c) => c.name);
+if (!eventCols.includes("turn")) db.exec("alter table events add column turn integer not null default 1");
 db.exec("create index if not exists tasks_org on tasks(org_id, created_at)");
 const secretCols = (db.prepare("pragma table_info(secrets)").all() as { name: string }[]).map((c) => c.name);
 if (!secretCols.includes("last_used_at")) db.exec("alter table secrets add column last_used_at integer");
@@ -172,7 +178,7 @@ export const adoptOrphanTasks = (orgId: string) =>
 
 const TERMINAL: Status[] = ["done", "no_changes", "failed", "cancelled"];
 
-export const updateTask = (id: string, patch: Partial<Pick<Task, "status" | "branch" | "mr_url" | "cost" | "started_at" | "finished_at" | "files_json" | "flagged">>) => {
+export const updateTask = (id: string, patch: Partial<Pick<Task, "status" | "branch" | "mr_url" | "cost" | "started_at" | "finished_at" | "files_json" | "flagged" | "turn" | "followup">>) => {
   // Les horodatages suivent le statut : début au passage en « running », fin dès qu'un état terminal est atteint.
   if (patch.status === "running" && patch.started_at === undefined) patch = { ...patch, started_at: Date.now() };
   if (patch.status && TERMINAL.includes(patch.status) && patch.finished_at === undefined) patch = { ...patch, finished_at: Date.now() };
@@ -185,8 +191,9 @@ export const updateTask = (id: string, patch: Partial<Pick<Task, "status" | "bra
 
 export const addEvent = (task_id: string, type: string, text: string) => {
   const ts = Date.now();
-  const r = db.prepare("insert into events (task_id, ts, type, text) values (?,?,?,?)").run(task_id, ts, type, text);
-  bus.emit(task_id, { id: Number(r.lastInsertRowid), task_id, ts, type, text } satisfies Evt);
+  const turn = (db.prepare("select turn from tasks where id = ?").get(task_id) as { turn: number } | undefined)?.turn ?? 1;
+  const r = db.prepare("insert into events (task_id, ts, type, text, turn) values (?,?,?,?,?)").run(task_id, ts, type, text, turn);
+  bus.emit(task_id, { id: Number(r.lastInsertRowid), task_id, ts, type, text, turn } satisfies Evt);
 };
 
 export const getEvents = (task_id: string, afterId = 0) =>

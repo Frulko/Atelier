@@ -13,9 +13,9 @@ import { cookieHeader, currentSessionId, endOtherSessions, endSession, sessionId
 import { FailureLimiter } from "./ratelimit.ts";
 import { can, canAssign, canTouch, ROLES, type Action } from "./access.ts";
 import { hashInviteToken, INVITE_TTL_MS, newInviteToken } from "./invites.ts";
-import { cancel, enqueue, newId } from "./pipeline.ts";
+import { cancel, newId } from "./pipeline.ts";
 import { securityHeaders, serveStatic } from "./static.ts";
-import { startTask } from "./start.ts";
+import { followUp, MAX_TURNS, startTask } from "./start.ts";
 import { cleanAttachments, MAX_BODY_BYTES } from "./attachments.ts";
 import { CHAT_PROVIDERS, effectiveChat, MAX_MESSAGE_CHARS, MAX_MESSAGES, runChat, textOf, toUIMessage } from "./chat.ts";
 
@@ -523,6 +523,24 @@ export function createApp() {
               log("conversation.delete", { type: "conversation", id: conv.id }, { mode: "chat" });
               return json(res, 200, { ok: true });
             }
+            if (req.method === "POST" && sub === "/messages") {
+              // Message de suite sur une TÂCHE : un nouveau tour de l'agent, sur la même branche (la proposition ouverte se met à jour)
+              if (conv.mode !== "task" || !conv.task_id) return json(res, 400, { error: "cette conversation est une discussion : écris-lui via /chat" });
+              if (typeof a === "string") return deny(a);
+              const c = gate("task:create");
+              if (typeof c === "string") return deny(c);
+              const task = getTaskInOrg(conv.task_id, orgId);
+              if (!task) return json(res, 404, { error: "introuvable" });
+              if (task.user_id !== user.id && !can(a.role, "task:cancel_any")) return json(res, 403, { error: "seule la personne qui a lancé la tâche, ou un administrateur, peut demander un ajustement" });
+              const { text } = await body(req);
+              if (typeof text !== "string" || !text.trim() || text.length > MAX_MESSAGE_CHARS) return json(res, 400, { error: "message vide ou trop long" });
+              if (task.status !== "done") return json(res, 409, { error: task.status === "queued" || task.status === "running" ? "l'agent travaille encore : attends la fin de ce tour" : "cette tâche n'a pas de proposition à ajuster : lance une nouvelle tâche" });
+              if (task.turn >= MAX_TURNS) return json(res, 409, { error: `limite de ${MAX_TURNS} tours atteinte pour cette tâche : lance une nouvelle tâche` });
+              if (overBudget(orgId)) return json(res, 402, { error: "budget mensuel de l'organisation épuisé" });
+              followUp(task.id, conv.id, text.trim());
+              log("task.followup", { type: "task", id: task.id }, { turn: task.turn + 1 });
+              return json(res, 201, { taskId: task.id, turn: task.turn + 1 });
+            }
             if (req.method === "POST" && sub === "/chat") {
               const c = gate("chat:use");
               if (typeof c === "string") return deny(c);
@@ -587,7 +605,7 @@ export function createApp() {
             if (typeof c === "string") return deny(c);
             cancel(task.id);
             log("task.cancel", { type: "task", id: task.id });
-            if (task.status === "queued") updateTask(task.id, { status: "cancelled" });
+            if (task.status === "queued") updateTask(task.id, { status: task.turn > 1 ? "done" : "cancelled" }); // un ajustement annulé laisse la proposition précédente intacte
             return json(res, 200, { ok: true });
           }
           if (req.method === "POST" && sub === "/retry") {
@@ -599,7 +617,6 @@ export function createApp() {
             if (overBudget(orgId)) return json(res, 402, { error: "budget mensuel de l'organisation épuisé" });
             const { taskId: nid } = startTask({ orgId, userId: user.id, project: row, prompt: task.prompt, note: `Relance de la tâche ${task.id}. En file d'attente.` });
             log("task.retry", { type: "task", id: nid }, { from: task.id, project: row.name });
-            enqueue(nid);
             return json(res, 201, getTaskDetail(nid, orgId));
           }
           if (req.method === "GET" && !sub) return json(res, 200, getTaskDetail(task.id, orgId));

@@ -65,6 +65,15 @@ show() { git --git-dir="$S/fixtures/$1.git" show "atelier/$2:$3"; }
 ID=$(submit mini-regie "ajoute le tarif dégressif"); wait_done "$ID"
 show mini-regie "$ID" NOTES.md | grep -q "tarif dégressif" || fail "NOTES.md absent de la branche"
 
+# 2b. Message de suite : un nouveau tour de l'agent sur la MÊME branche (la proposition s'enrichit, pas de nouvelle branche)
+CID=$(curl -sf "${A[@]}" "$O/conversations?mode=task" | python3 -c 'import sys,json;print(next(c["id"] for c in json.load(sys.stdin)["items"] if c["taskId"]==sys.argv[1]))' "$ID")
+[ "$(code "${A[@]}" $O/conversations/$CID/messages -d '{"text":"ajoute aussi les horaires"}')" = 201 ] || fail "le message de suite est refusé"
+sleep 1; wait_done "$ID"
+show mini-regie "$ID" NOTES.md | grep -q "tarif dégressif" || fail "l'ajustement a perdu le premier tour"
+show mini-regie "$ID" NOTES.md | grep -q "horaires" || fail "l'ajustement n'est pas dans la branche"
+SUBJECTS=$(git --git-dir="$S/fixtures/mini-regie.git" log "atelier/$ID" --format=%s)
+grep -q "ajustement 2" <<<"$SUBJECTS" || fail "pas de commit d'ajustement sur la branche"
+
 # 3. Boucle de correction : le 1er essai casse la vérification, le 2e la répare
 ID=$(submit todo-api "casse le projet"); wait_done "$ID"
 # le flux SSE reste ouvert : curl sort sur délai (code 28), d'où le `|| true`

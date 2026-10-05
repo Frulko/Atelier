@@ -38,12 +38,13 @@ function gitEnv(token: string, forge: Project["forge"] = "gitlab"): NodeJS.Proce
 const git = async (ws: Workspace, args: string[], token = "", forge: Project["forge"] = "gitlab") =>
   (await run("git", ["--git-dir", ws.gitdir, "--work-tree", ws.tree, ...args], { env: gitEnv(token, forge), maxBuffer: 20e6 })).stdout.trim();
 
-export async function clone(p: Project, taskId: string, branch: string): Promise<Workspace> {
+/** `existing` : un ajustement repart de la branche déjà envoyée de la tâche (la proposition ouverte se met alors à jour), pas de la branche de base. */
+export async function clone(p: Project, taskId: string, branch: string, existing = false): Promise<Workspace> {
   const ws = workspace(taskId);
   await mkdir(ws.root, { recursive: true });
-  await run("git", ["clone", "--quiet", "--separate-git-dir", ws.gitdir, "--branch", p.branch, p.repo, ws.tree], { env: gitEnv(p.token, p.forge) });
+  await run("git", ["clone", "--quiet", "--separate-git-dir", ws.gitdir, "--branch", existing ? branch : p.branch, p.repo, ws.tree], { env: gitEnv(p.token, p.forge) });
   await rm(join(ws.tree, ".git"), { force: true }); // l'agent ne voit pas le git
-  await git(ws, ["checkout", "--quiet", "-b", branch]);
+  if (!existing) await git(ws, ["checkout", "--quiet", "-b", branch]);
   // uid 1000 = utilisateur "node" du bac à sable
   await run("chown", ["-R", "1000:1000", ws.tree]);
   return ws;
