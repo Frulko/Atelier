@@ -1,5 +1,4 @@
 import http from "node:http";
-import { readFileSync } from "node:fs";
 import { secretUsers, updateSecret, listSessions, deleteSessionByPrefix, setUserName, renameOrg, activeTaskCount, deleteOrgCascade, orgStats, orgUsage, queryAudit, userActivity, getUserById, STATUSES, queryTasks, getTaskDetail, type Status, addEvent, addMember, bus, consumeInvitation, countOrgsOf, countOwners, createOrg, createUser, deleteInvitation, findInvitation, insertInvitation, listInvitations, listMembers, removeMember, setMemberRole, createTask, getOrg, monthSpend, setOrgBudget, deleteProject, deleteSecret, getEvents, getProjectInOrg, getSecretRow, getTask, getTaskInOrg, getUserByEmail, insertProject, listProjects, listSecrets, listTasks, orgsOf, roleOf, secretInUse, updatePassword, updateProject, updateTask, type Evt, type Role, type User } from "./db.ts";
 import { rotateSecret, storeSecret } from "./vault.ts";
 import { verifyAccess } from "./git.ts";
@@ -14,8 +13,8 @@ import { FailureLimiter } from "./ratelimit.ts";
 import { can, canAssign, canTouch, ROLES, type Action } from "./access.ts";
 import { hashInviteToken, INVITE_TTL_MS, newInviteToken } from "./invites.ts";
 import { cancel, enqueue, newId } from "./pipeline.ts";
+import { securityHeaders, serveStatic } from "./static.ts";
 
-const page = readFileSync(new URL("../public/index.html", import.meta.url));
 const json = (res: http.ServerResponse, code: number, body: unknown, headers: Record<string, string> = {}) =>
   res.writeHead(code, { "content-type": "application/json", ...headers }).end(JSON.stringify(body));
 
@@ -68,9 +67,11 @@ const DUMMY_HASH = await hashPassword("mot de passe factice pour égaliser le te
 export function createApp() {
   return http.createServer(async (req, res) => {
     const url = new URL(req.url!, "http://x");
+    securityHeaders(res, isSecure(req));
     if (url.pathname === "/healthz") return void res.end("ok");
-    // La page ne contient aucun secret : elle affiche elle-même le formulaire de connexion.
-    if (req.method === "GET" && url.pathname === "/") return void res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(page);
+    if (url.pathname.startsWith("/api/")) res.setHeader("cache-control", "no-store"); // jamais de réponse d'API en cache
+    // L'application web ne contient aucun secret : elle affiche elle-même le formulaire de connexion.
+    if (await serveStatic(req, res, url.pathname)) return;
 
     try {
       if (req.method !== "GET" && req.method !== "HEAD" && !sameOrigin(req)) return json(res, 403, { error: "origine refusée" });

@@ -1,0 +1,9 @@
+**/node_modules
+.git
+.demo
+.smoke
+.smoke-shots
+.dev-shots
+web/dist
+docs
+fixtures

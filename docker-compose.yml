@@ -4,7 +4,9 @@ name: atelier
 
 services:
   orchestrator:
-    build: ./orchestrator
+    build:
+      context: .                       # la racine : l'image compile aussi l'application web
+      dockerfile: orchestrator/Dockerfile
     container_name: ${ATELIER_CONTAINER:-atelier-orchestrator}   # nom DNS vu par les bacs à sable (proxy)
     restart: unless-stopped
     environment:
