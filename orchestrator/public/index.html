@@ -230,8 +230,9 @@ async function loadProjects() {
   $("#project").innerHTML = ps.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("") || `<option value="">(aucun projet : un administrateur doit en créer un)</option>`;
 }
 async function loadTasks() {
-  const ts = await api(orgUrl("/tasks")).catch((e) => { if (e.status === 401) boot(); return null; });
-  if (!ts) return;
+  const page = await api(orgUrl("/tasks")).catch((e) => { if (e.status === 401) boot(); return null; });
+  if (!page) return;
+  const ts = page.items;
   $("#tasks").innerHTML = ts.map((t) =>
     `<button data-id="${esc(t.id)}" class="${t.id === cur ? "on" : ""}">${esc(t.prompt.slice(0, 80))}<div class="st">${esc(t.project_name ?? t.project)} · ${esc(LABEL[t.status])}${t.cost ? ` · ${t.cost.toFixed(2)} $` : ""}</div></button>`).join("") || "<p class=st>Aucune tâche.</p>";
 }

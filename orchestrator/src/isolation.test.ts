@@ -61,10 +61,11 @@ test("l'identifiant d'une tâche ne suffit pas : via MON organisation, la tâche
 });
 
 test("les listes ne contiennent que les tâches de l'organisation", async () => {
-  const a = (await (await call(cA, "GET", `/api/orgs/${orgA}/tasks`)).json()) as { id: string }[];
-  assert.deepEqual(a.map((t) => t.id).sort(), ["aaaaaaa1", "aaaaaaa2"]);
-  const b = (await (await call(cB, "GET", `/api/orgs/${orgB}/tasks`)).json()) as { id: string }[];
-  assert.deepEqual(b.map((t) => t.id), ["bbbbbbb1"]);
+  const a = (await (await call(cA, "GET", `/api/orgs/${orgA}/tasks`)).json()) as { items: { id: string }[]; total: number };
+  assert.deepEqual(a.items.map((t) => t.id).sort(), ["aaaaaaa1", "aaaaaaa2"]);
+  assert.equal(a.total, 2);
+  const b = (await (await call(cB, "GET", `/api/orgs/${orgB}/tasks`)).json()) as { items: { id: string }[] };
+  assert.deepEqual(b.items.map((t) => t.id), ["bbbbbbb1"]);
 });
 
 test("/api/me ne liste que les organisations de la personne, avec son rôle", async () => {

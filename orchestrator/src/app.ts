@@ -1,6 +1,6 @@
 import http from "node:http";
 import { readFileSync } from "node:fs";
-import { addEvent, addMember, bus, consumeInvitation, countOrgsOf, countOwners, createOrg, createUser, deleteInvitation, findInvitation, insertInvitation, listInvitations, listMembers, removeMember, setMemberRole, createTask, getOrg, monthSpend, setOrgBudget, deleteProject, deleteSecret, getEvents, getProjectInOrg, getSecretRow, getTask, getTaskInOrg, getUserByEmail, insertProject, listProjects, listSecrets, listTasks, orgsOf, roleOf, secretInUse, updatePassword, updateProject, updateTask, type Evt, type Role, type User } from "./db.ts";
+import { STATUSES, queryTasks, getTaskDetail, type Status, addEvent, addMember, bus, consumeInvitation, countOrgsOf, countOwners, createOrg, createUser, deleteInvitation, findInvitation, insertInvitation, listInvitations, listMembers, removeMember, setMemberRole, createTask, getOrg, monthSpend, setOrgBudget, deleteProject, deleteSecret, getEvents, getProjectInOrg, getSecretRow, getTask, getTaskInOrg, getUserByEmail, insertProject, listProjects, listSecrets, listTasks, orgsOf, roleOf, secretInUse, updatePassword, updateProject, updateTask, type Evt, type Role, type User } from "./db.ts";
 import { storeSecret } from "./vault.ts";
 import { overBudget } from "./budget.ts";
 import { PROVIDERS } from "./proxy.ts";
@@ -155,7 +155,7 @@ export function createApp() {
       }
 
       // ---- ressources d'une organisation : /api/orgs/:org/...
-      const o = /^\/api\/orgs\/([0-9a-f]{16})\/(projects|tasks|secrets|members|invitations)(?:\/([0-9a-f]{8,16}))?(\/events|\/cancel)?$/.exec(url.pathname);
+      const o = /^\/api\/orgs\/([0-9a-f]{16})\/(projects|tasks|secrets|members|invitations)(?:\/([0-9a-f]{8,16}))?(\/events|\/cancel|\/retry)?$/.exec(url.pathname);
       if (o) {
         const [, orgId, kind, itemId, sub] = o;
         const deny = (a: Access) => a === "not_found" ? json(res, 404, { error: "introuvable" }) : json(res, 403, { error: "droits insuffisants" });
@@ -283,7 +283,15 @@ export function createApp() {
         if (kind === "tasks" && !itemId) {
           if (req.method === "GET") {
             const a = gate("task:read");
-            return typeof a === "string" ? deny(a) : json(res, 200, listTasks(orgId));
+            if (typeof a === "string") return deny(a);
+            const sp = url.searchParams;
+            const num = (k: string) => { const v = sp.get(k); return v !== null && v !== "" && Number.isFinite(Number(v)) ? Number(v) : undefined; };
+            const status = (sp.get("status") ?? "").split(",").filter((x): x is Status => (STATUSES as readonly string[]).includes(x));
+            const q = (sp.get("q") ?? "").slice(0, 100).trim();
+            return json(res, 200, queryTasks(orgId, {
+              status, project: sp.get("project") || undefined, user: sp.get("user") || undefined, q: q || undefined,
+              from: num("from"), to: num("to"), limit: num("limit"), offset: num("offset"),
+            }));
           }
           if (req.method === "POST") {
             const a = gate("task:create");
@@ -296,7 +304,7 @@ export function createApp() {
             createTask(id, orgId, user.id, row.id, prompt.trim());
             addEvent(id, "step", "Demande reçue, en file d'attente.");
             enqueue(id);
-            return json(res, 201, getTask(id));
+            return json(res, 201, getTaskDetail(id, orgId));
           }
         }
 
@@ -313,7 +321,20 @@ export function createApp() {
             if (task.status === "queued") updateTask(task.id, { status: "cancelled" });
             return json(res, 200, { ok: true });
           }
-          if (req.method === "GET" && !sub) return json(res, 200, task);
+          if (req.method === "POST" && sub === "/retry") {
+            // Relance : une NOUVELLE tâche avec la même demande, au nom de la personne qui relance
+            const c = gate("task:create");
+            if (typeof c === "string") return deny(c);
+            const row = getProjectInOrg(task.project, orgId);
+            if (!row) return json(res, 400, { error: "le projet de cette tâche n'existe plus" });
+            if (overBudget(orgId)) return json(res, 402, { error: "budget mensuel de l'organisation épuisé" });
+            const nid = newId();
+            createTask(nid, orgId, user.id, row.id, task.prompt);
+            addEvent(nid, "step", `Relance de la tâche ${task.id}. En file d'attente.`);
+            enqueue(nid);
+            return json(res, 201, getTaskDetail(nid, orgId));
+          }
+          if (req.method === "GET" && !sub) return json(res, 200, getTaskDetail(task.id, orgId));
           if (req.method === "GET" && sub === "/events") {
             // SSE : rejoue l'historique puis suit le direct.
             res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });

@@ -3,11 +3,16 @@ import { EventEmitter } from "node:events";
 import { randomBytes } from "node:crypto";
 import { cfg } from "./config.ts";
 
-export type Status = "queued" | "running" | "done" | "no_changes" | "failed" | "cancelled";
+export const STATUSES = ["queued", "running", "done", "no_changes", "failed", "cancelled"] as const;
+export type Status = (typeof STATUSES)[number];
 export type Task = {
   project_name?: string | null;
   id: string; org_id: string | null; user_id: string | null; project: string; prompt: string; status: Status;
   branch: string | null; mr_url: string | null; cost: number; created_at: number;
+  started_at: number | null; finished_at: number | null;
+  /** Chemins modifiés (JSON, 200 au plus) et nombre d'entre eux qui touchent un chemin protégé. */
+  files_json: string | null; flagged: number;
+  user_email?: string | null;
 };
 export type Evt = { id: number; task_id: string; ts: number; type: string; text: string };
 
@@ -70,6 +75,10 @@ if (!orgCols.includes("budget_usd_month")) db.exec("alter table orgs add column 
 const taskCols = (db.prepare("pragma table_info(tasks)").all() as { name: string }[]).map((c) => c.name);
 if (!taskCols.includes("org_id")) db.exec("alter table tasks add column org_id text");
 if (!taskCols.includes("user_id")) db.exec("alter table tasks add column user_id text");
+if (!taskCols.includes("started_at")) db.exec("alter table tasks add column started_at integer");
+if (!taskCols.includes("finished_at")) db.exec("alter table tasks add column finished_at integer");
+if (!taskCols.includes("files_json")) db.exec("alter table tasks add column files_json text");
+if (!taskCols.includes("flagged")) db.exec("alter table tasks add column flagged integer not null default 0");
 db.exec("create index if not exists tasks_org on tasks(org_id, created_at)");
 
 /** Diffuse chaque événement aux clients SSE connectés. */
@@ -87,14 +96,45 @@ export const getTask = (id: string) =>
 export const getTaskInOrg = (id: string, orgId: string) =>
   db.prepare("select * from tasks where id = ? and org_id = ?").get(id, orgId) as Task | undefined;
 
-export const listTasks = (orgId: string) =>
-  db.prepare("select t.*, p.name as project_name from tasks t left join projects p on p.id = t.project where t.org_id = ? order by t.created_at desc limit 50").all(orgId) as Task[];
+const TASK_SELECT = `select t.*, p.name as project_name, u.email as user_email
+  from tasks t left join projects p on p.id = t.project left join users u on u.id = t.user_id`;
+
+export type TaskFilters = {
+  status?: Status[]; project?: string; user?: string; q?: string; from?: number; to?: number; limit?: number; offset?: number;
+};
+
+/** Liste filtrée et paginée, TOUJOURS bornée à l'organisation. Les valeurs sont des paramètres liés, jamais du SQL. */
+export function queryTasks(orgId: string, f: TaskFilters = {}): { items: Task[]; total: number; limit: number; offset: number } {
+  const where = ["t.org_id = ?"]; const args: (string | number)[] = [orgId];
+  if (f.status?.length) { where.push(`t.status in (${f.status.map(() => "?").join(",")})`); args.push(...f.status); }
+  if (f.project) { where.push("t.project = ?"); args.push(f.project); }
+  if (f.user) { where.push("t.user_id = ?"); args.push(f.user); }
+  if (f.q) { where.push("t.prompt like ? escape '\\'"); args.push(`%${f.q.replace(/[\\%_]/g, "\\$&")}%`); }
+  if (f.from != null) { where.push("t.created_at >= ?"); args.push(f.from); }
+  if (f.to != null) { where.push("t.created_at < ?"); args.push(f.to); }
+  const limit = Math.min(Math.max(f.limit ?? 25, 1), 100), offset = Math.max(f.offset ?? 0, 0);
+  const w = where.join(" and ");
+  const total = (db.prepare(`select count(*) as n from tasks t where ${w}`).get(...args) as { n: number }).n;
+  const items = db.prepare(`${TASK_SELECT} where ${w} order by t.created_at desc, t.rowid desc limit ? offset ?`).all(...args, limit, offset) as Task[];
+  return { items, total, limit, offset };
+}
+
+export const listTasks = (orgId: string) => queryTasks(orgId).items;
+
+/** Détail d'une tâche de CETTE organisation, avec demandeur et nom du projet. */
+export const getTaskDetail = (id: string, orgId: string) =>
+  db.prepare(`${TASK_SELECT} where t.id = ? and t.org_id = ?`).get(id, orgId) as Task | undefined;
 
 /** Tâches d'avant les organisations : rattachées à l'organisation donnée (une seule fois, au démarrage). */
 export const adoptOrphanTasks = (orgId: string) =>
   db.prepare("update tasks set org_id = ? where org_id is null").run(orgId);
 
-export const updateTask = (id: string, patch: Partial<Pick<Task, "status" | "branch" | "mr_url" | "cost">>) => {
+const TERMINAL: Status[] = ["done", "no_changes", "failed", "cancelled"];
+
+export const updateTask = (id: string, patch: Partial<Pick<Task, "status" | "branch" | "mr_url" | "cost" | "started_at" | "finished_at" | "files_json" | "flagged">>) => {
+  // Les horodatages suivent le statut : début au passage en « running », fin dès qu'un état terminal est atteint.
+  if (patch.status === "running" && patch.started_at === undefined) patch = { ...patch, started_at: Date.now() };
+  if (patch.status && TERMINAL.includes(patch.status) && patch.finished_at === undefined) patch = { ...patch, finished_at: Date.now() };
   const keys = Object.keys(patch);
   if (!keys.length) return;
   db.prepare(`update tasks set ${keys.map((k) => `${k} = ?`).join(", ")} where id = ?`)
@@ -316,3 +356,7 @@ export const consumeInvitation = (tokenHash: string) =>
 
 export const countOrgsOf = (userId: string) =>
   (db.prepare("select count(*) as n from memberships where user_id = ?").get(userId) as { n: number }).n;
+
+/** Pour les tests : date de création arbitraire (les filtres par période en ont besoin). */
+export const updateTaskCreatedAtForTest = (id: string, at: number) =>
+  void db.prepare("update tasks set created_at = ? where id = ?").run(at, id);

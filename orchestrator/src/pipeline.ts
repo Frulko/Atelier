@@ -63,6 +63,7 @@ async function execute(id: string) {
     }
 
     const flagged = files.filter((f) => p.protectedPaths.some((pp) => f.startsWith(pp)));
+    updateTask(id, { files_json: JSON.stringify(files.slice(0, 200)), flagged: flagged.length });
     const title = `${flagged.length ? "[REVUE REQUISE] " : ""}atelier : ${task.prompt.split("\n")[0].slice(0, 70)}`;
     log("step", "Envoi de la branche…");
     await commitAndPush(p, ws, branch, `${title}\n\nTâche atelier ${id}`);
