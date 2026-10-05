@@ -1,0 +1,5 @@
+# Ajout utilisé par scripts/smoke.sh et scripts/demo.sh : monte les faux dépôts git locaux.
+services:
+  orchestrator:
+    volumes:
+      - ${FIXTURES_DIR:?}:/fixtures

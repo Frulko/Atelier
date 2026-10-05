@@ -1,0 +1,5 @@
+.env
+.work/
+.smoke/
+node_modules/
+*.db

@@ -1,0 +1,47 @@
+# Atelier — à déployer tel quel comme "Stack" dans Portainer (Repository ou Web editor),
+# ou en local : docker compose up -d --build
+name: atelier
+
+services:
+  orchestrator:
+    build: ./orchestrator
+    container_name: atelier-orchestrator   # nom DNS vu par les bacs à sable (proxy)
+    restart: unless-stopped
+    environment:
+      ATELIER_PASSWORD: ${ATELIER_PASSWORD:?mot de passe initial du compte propriétaire}
+      ATELIER_BOOTSTRAP_EMAIL: ${ATELIER_BOOTSTRAP_EMAIL:-admin@localhost}
+      TRUST_PROXY: ${TRUST_PROXY:-}          # 1 derrière un reverse proxy HTTPS (lit X-Forwarded-*)
+      COOKIE_SECURE: ${COOKIE_SECURE:-}      # 1 pour forcer l'attribut Secure du cookie
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      GIT_TOKEN: ${GIT_TOKEN:-}
+      PROJECTS_JSON: ${PROJECTS_JSON:-}      # ou un fichier /data/projects.json
+      ATELIER_WORKDIR: ${ATELIER_WORKDIR:-/srv/atelier/work}
+      ATELIER_FAKE_AGENT: ${ATELIER_FAKE_AGENT:-}
+      MAX_BUDGET_USD: ${MAX_BUDGET_USD:-2}
+    volumes:
+      # ⚠ Le socket Docker = droits root sur l'hôte. Voir README, "Sécurité".
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Même chemin des deux côtés : c'est le démon de l'hôte qui monte ce dossier dans les bacs à sable.
+      - ${ATELIER_WORKDIR:-/srv/atelier/work}:${ATELIER_WORKDIR:-/srv/atelier/work}
+      - data:/data
+    ports:
+      - "${ATELIER_PORT:-8080}:8080"
+    networks: [default, sandbox]
+
+  # Construit l'image du bac à sable (l'orchestrateur la lance ensuite à la demande) puis s'arrête.
+  sandbox-image:
+    build: ./sandbox
+    image: atelier-sandbox:latest
+    entrypoint: ["true"]
+    restart: "no"
+
+volumes:
+  data:
+
+networks:
+  # Réseau SANS Internet : les bacs à sable n'y joignent que le proxy de l'orchestrateur.
+  sandbox:
+    name: atelier-sandbox
+    internal: true

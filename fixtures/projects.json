@@ -1,0 +1,29 @@
+[
+  {
+    "id": "boulangerie",
+    "name": "Boulangerie du Coin (site)",
+    "repo": "/fixtures/boulangerie.git",
+    "forge": "none",
+    "check": "grep -q \"<title>\" index.html",
+    "protectedPaths": [
+      "style.css"
+    ]
+  },
+  {
+    "id": "todo-api",
+    "name": "Todo API (Node)",
+    "repo": "/fixtures/todo-api.git",
+    "forge": "none",
+    "check": "for f in *.js; do node --check \"$f\" || exit 1; done"
+  },
+  {
+    "id": "mini-regie",
+    "name": "Mini Régie (calculs)",
+    "repo": "/fixtures/mini-regie.git",
+    "forge": "none",
+    "check": "node test.js",
+    "protectedPaths": [
+      "cantine.js"
+    ]
+  }
+]

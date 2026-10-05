@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="fr">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Atelier</title>
+<style>
+  :root { --bg:#fafaf9; --fg:#1c1917; --mut:#78716c; --card:#fff; --line:#e7e5e4; --acc:#ea580c; color-scheme: light dark; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#1c1917; --fg:#fafaf9; --mut:#a8a29e; --card:#292524; --line:#44403c; } }
+  * { box-sizing: border-box }
+  body { margin:0; font:15px/1.5 system-ui,sans-serif; background:var(--bg); color:var(--fg) }
+  main { max-width:900px; margin:0 auto; padding:24px 16px; display:grid; gap:16px }
+  h1 { margin:0; font-size:20px } h1 small { color:var(--mut); font-weight:400 }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px }
+  select,textarea,button { font:inherit; color:inherit; border:1px solid var(--line); border-radius:8px; padding:8px 10px; background:var(--bg) }
+  textarea { width:100%; min-height:90px; resize:vertical }
+  button { cursor:pointer } button.primary { background:var(--acc); border-color:var(--acc); color:#fff }
+  .row { display:flex; gap:8px; margin-top:8px; flex-wrap:wrap }
+  .tasks button { display:block; width:100%; text-align:left; margin-top:6px }
+  .tasks button.on { border-color:var(--acc) }
+  .st { font-size:12px; color:var(--mut) }
+  #log { font:13px/1.5 ui-monospace,monospace; max-height:50vh; overflow:auto; white-space:pre-wrap }
+  #login { max-width:360px; margin:12vh auto 0; display:grid; gap:10px }
+  #login input, #acct input { font:inherit; color:inherit; border:1px solid var(--line); border-radius:8px; padding:8px 10px; background:var(--bg); width:100% }
+  .err { color:#dc2626; min-height:1.4em; font-size:13px }
+  header.top { display:flex; align-items:center; gap:10px; flex-wrap:wrap }
+  header.top h1 { flex:1 }
+  #acct { display:grid; gap:8px; margin-top:8px }
+  .e-step { color:var(--acc) } .e-error,.e-check_failed { color:#dc2626 } .e-tool { color:var(--mut) } .e-done { color:#16a34a; font-weight:600 }
+</style>
+<main id="login" hidden>
+  <h1>Atelier</h1>
+  <form class="card" id="lf" style="display:grid;gap:10px">
+    <input id="email" type="email" placeholder="E-mail" autocomplete="username" required>
+    <input id="pass" type="password" placeholder="Mot de passe" autocomplete="current-password" required>
+    <div class="err" id="lerr" role="alert"></div>
+    <button class="primary">Se connecter</button>
+  </form>
+</main>
+<main id="app" hidden>
+  <header class="top">
+    <h1>Atelier <small>— demande une modification, l'agent prépare une proposition à valider</small></h1>
+    <select id="org" aria-label="Organisation" hidden></select>
+    <span class="st" id="who"></span>
+    <button id="logout" type="button">Déconnexion</button>
+  </header>
+  <details class="card"><summary>Mon compte — changer le mot de passe</summary>
+    <form id="acct">
+      <input id="cur" type="password" placeholder="Mot de passe actuel" autocomplete="current-password" required>
+      <input id="nxt" type="password" placeholder="Nouveau mot de passe (8 caractères min.)" autocomplete="new-password" required>
+      <div class="err" id="aerr" role="alert"></div>
+      <button>Changer</button>
+    </form>
+  </details>
+  <form class="card" id="f">
+    <select id="project" aria-label="Projet"></select>
+    <textarea id="prompt" placeholder="Ex. : ajoute un tarif dégressif sur l'onglet Voyage" required></textarea>
+    <div class="row"><button class="primary">Envoyer</button></div>
+  </form>
+  <div class="card tasks"><strong>Tâches</strong><div id="tasks"></div></div>
+  <div class="card" id="detail" hidden>
+    <div class="row" style="margin:0 0 8px"><strong id="title"></strong><button id="cancel" type="button">Annuler</button></div>
+    <div id="log"></div>
+  </div>
+</main>
+<script>
+const $ = (s) => document.querySelector(s);
+const LABEL = { queued:"en attente", running:"en cours", done:"prête à valider", no_changes:"rien à changer", failed:"échec", cancelled:"annulée" };
+let es, cur, ORG;
+const orgUrl = (p) => `/api/orgs/${ORG}${p}`;
+
+const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
+
+async function api(path, opt) {
+  const r = await fetch(path, opt);
+  if (r.status === 401 && path !== "/api/auth/login") { showLogin(); throw new Error("connexion requise"); }
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.status);
+  return r.json();
+}
+
+let timer;
+function showLogin() { clearInterval(timer); es?.close(); $("#app").hidden = true; $("#login").hidden = false; }
+async function showApp(me) {
+  $("#login").hidden = true; $("#app").hidden = false;
+  const orgs = me.orgs;
+  ORG = orgs.find((o) => o.id === localStorage.getItem("org"))?.id ?? orgs[0]?.id;
+  $("#org").innerHTML = orgs.map((o) => `<option value="${esc(o.id)}"${o.id === ORG ? " selected" : ""}>${esc(o.name)} (${esc(o.role)})</option>`).join("");
+  $("#org").hidden = orgs.length < 2;
+  $("#who").textContent = me.user.email + (orgs.length === 1 ? ` · ${orgs[0].name} (${orgs[0].role})` : "");
+  if (!ORG) { $("#who").textContent += " — aucune organisation"; return; }
+  await loadProjects(); await loadTasks();
+  timer = setInterval(loadTasks, 5000);
+}
+async function boot() {
+  try { await showApp(await api("/api/me")); } catch { showLogin(); }
+}
+
+$("#lf").onsubmit = async (ev) => {
+  ev.preventDefault(); $("#lerr").textContent = "";
+  try {
+    await api("/api/auth/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: $("#email").value, password: $("#pass").value }) });
+    $("#pass").value = ""; await boot();
+  } catch (e) { $("#lerr").textContent = e.message; }
+};
+$("#org").onchange = () => { localStorage.setItem("org", $("#org").value); es?.close(); $("#detail").hidden = true; cur = null; clearInterval(timer); boot(); };
+$("#logout").onclick = async () => { await api("/api/auth/logout", { method: "POST" }).catch(() => {}); showLogin(); };
+$("#acct").onsubmit = async (ev) => {
+  ev.preventDefault(); $("#aerr").textContent = "";
+  try {
+    await api("/api/auth/password", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ current: $("#cur").value, next: $("#nxt").value }) });
+    $("#cur").value = $("#nxt").value = ""; $("#aerr").textContent = "Mot de passe changé (les autres appareils sont déconnectés).";
+  } catch (e) { $("#aerr").textContent = e.message; }
+};
+
+async function loadProjects() {
+  const ps = await api(orgUrl("/projects"));
+  $("#project").innerHTML = ps.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("");
+}
+
+async function loadTasks() {
+  const ts = await api(orgUrl("/tasks"));
+  $("#tasks").innerHTML = ts.map((t) =>
+    `<button data-id="${t.id}" class="${t.id === cur ? "on" : ""}">${esc(t.prompt.slice(0, 80))}<div class="st">${esc(t.project)} · ${LABEL[t.status]}${t.cost ? ` · ${t.cost.toFixed(2)} $` : ""}</div></button>`).join("") || "<p class=st>Aucune tâche.</p>";
+}
+
+function open(id, prompt) {
+  cur = id; es?.close();
+  $("#detail").hidden = false; $("#title").textContent = prompt; $("#log").innerHTML = "";
+  es = new EventSource(orgUrl(`/tasks/${id}/events`));
+  es.onmessage = (m) => {
+    const e = JSON.parse(m.data);
+    if (e.type === "status") return loadTasks();
+    const log = $("#log"), line = document.createElement("div");
+    line.className = "e-" + e.type;
+    line.innerHTML = e.type === "done" && /^Prêt : https?:/.test(e.text) ? `Prêt : <a href="${esc(e.text.slice(7))}" target="_blank" rel="noopener">voir la proposition</a>` : esc(e.text);
+    log.append(line); log.scrollTop = log.scrollHeight;
+  };
+  loadTasks();
+}
+
+$("#f").onsubmit = async (ev) => {
+  ev.preventDefault();
+  const prompt = $("#prompt").value;
+  const t = await api(orgUrl("/tasks"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ project: $("#project").value, prompt }) });
+  $("#prompt").value = ""; open(t.id, t.prompt);
+};
+$("#tasks").onclick = (ev) => { const b = ev.target.closest("button"); if (b) open(b.dataset.id, b.firstChild.textContent); };
+$("#cancel").onclick = () => api(orgUrl(`/tasks/${cur}/cancel`), { method: "POST" });
+
+boot();
+</script>
+</html>

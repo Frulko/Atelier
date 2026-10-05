@@ -1,0 +1,31 @@
+[
+  {
+    "id": "regis",
+    "name": "MonRégis",
+    "repo": "https://gitlab.example.com/groupe/regis.git",
+    "branch": "main",
+    "forge": "gitlab",
+    "tokenEnv": "GIT_TOKEN",
+    "engine": "claude",
+    "check": "node --check app.js",
+    "protectedPaths": [
+      "supabase/migrations/",
+      ".gitlab-ci.yml",
+      "db/"
+    ]
+  },
+  {
+    "id": "autre-projet",
+    "name": "Un autre projet",
+    "repo": "https://gitlab.example.com/groupe/autre.git",
+    "tokenEnv": "GIT_TOKEN_AUTRE",
+    "check": "true"
+  },
+  {
+    "id": "projet-github",
+    "name": "Un projet GitHub",
+    "repo": "https://github.com/mon-org/mon-repo.git",
+    "tokenEnv": "GITHUB_TOKEN",
+    "check": "npm test --silent"
+  }
+]
