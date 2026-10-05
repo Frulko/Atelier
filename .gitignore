@@ -1,7 +1,9 @@
-.env
-.work/
-.smoke/
-node_modules/
-*.db
-.smoke-shots/
 .demo/
+.dev-shots/
+.env
+.smoke-shots/
+.smoke/
+.work/
+*.db
+node_modules/
+web/dist/
