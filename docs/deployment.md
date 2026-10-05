@@ -26,7 +26,7 @@ mkdir -p /srv/atelier/work
 docker compose up -d --build
 ```
 
-Then sign in with `ATELIER_BOOTSTRAP_EMAIL` / `ATELIER_PASSWORD` and change the password. Create your git-token secret and projects through the API (see [Configuration → Projects](configuration.md#projects)), or give `PROJECTS_JSON` and `GIT_TOKEN` on the **first** start to have them imported.
+Then sign in with `ATELIER_BOOTSTRAP_EMAIL` / `ATELIER_PASSWORD` and change the password. Create your git-token secret and projects in the **Settings** tab (or through the API, see [Configuration → Projects](configuration.md#projects)), or give `PROJECTS_JSON` and `GIT_TOKEN` on the **first** start to have them imported.
 
 ## Portainer
 

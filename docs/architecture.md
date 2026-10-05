@@ -12,7 +12,7 @@ Atelier is one small service, the **orchestrator**, plus a **sandbox image** tha
 | **Vault** | `orchestrator/src/vault.ts` | Encrypts git tokens and model API keys at rest (AES-256-GCM) |
 | **Model proxy** | `orchestrator/src/proxy.ts` | The only route out of the sandbox. Identifies the organization from a one-time task token, enforces its budget, allows generation endpoints only and injects that organization's API key |
 | **Sandbox** | `sandbox/` — Node 24 slim + the Claude Agent SDK | One disposable container per task. Runs the agent on a copy of the project |
-| **Chat UI** | `orchestrator/public/index.html` | One static page: login, project picker, live task log |
+| **Web UI** | `orchestrator/public/index.html` | One static page, no build: login, invitation page, project picker, live task log, and a Settings tab (members, invitations, projects, secrets, budget) |
 
 ## The life of a task
 
@@ -68,7 +68,8 @@ atelier/
 ├── fixtures/                       fake projects for the demo and tests
 ├── docs/                           this documentation, diagram sources and images
 └── scripts/
-    ├── smoke.sh                    end-to-end test, no AI, no API key
+    ├── smoke.sh                    end-to-end test, no AI, no API key (and the UI check if Playwright is installed)
+    ├── ui_check.py                 drives the web UI in a browser (Playwright)
     ├── demo.sh                     local demo with three fake projects
     ├── fixtures.sh                 builds the fake local git repositories
     └── diagrams.sh                 regenerates docs/img from docs/diagrams

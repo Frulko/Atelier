@@ -14,7 +14,7 @@ Run from `orchestrator/` unless noted.
 |---|---|
 | `npm run check` | Type-check (`tsc --noEmit`) |
 | `npm test` | Unit and HTTP integration tests (`node --test`) |
-| `./scripts/smoke.sh` (repo root) | End-to-end test in Docker, no AI and no API key |
+| `./scripts/smoke.sh` (repo root) | End-to-end test in Docker, no AI and no API key. Also drives the UI in a browser if Playwright is installed (`pip install playwright`) |
 | `./scripts/demo.sh` (repo root) | Local demo with three fake projects |
 | `./scripts/diagrams.sh` (repo root) | Regenerate `docs/img/*.png` and `*.svg` from `docs/diagrams/*.html` |
 

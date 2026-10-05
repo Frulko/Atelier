@@ -2,7 +2,7 @@
 
 Several **users** grouped in **organizations**. Each organization owns its projects, secrets and history. A person in one organization never sees, launches or costs anything to another.
 
-**Status:** steps U1–U5 and the API half of U6 are done: accounts, sessions, roles, per-organization tasks, encrypted secrets, projects, per-organization model keys with task tokens and a monthly budget, and organization creation, members and invitations. What remains is the **web UI** for all of it — until then, organizations, members, invitations, projects and secrets are managed through the API. See the [roadmap](roadmap.md).
+**Status:** steps U1–U6 are done: accounts, sessions, roles, per-organization tasks, encrypted secrets, projects, per-organization model keys with task tokens and a monthly budget, organization creation, members and invitations — each with its API **and** its web UI. What remains is SSO ("sign in with GitLab / GitHub", OIDC). See the [roadmap](roadmap.md).
 
 ## Data model
 
@@ -95,7 +95,7 @@ On first start with an empty user table, Atelier creates the *Default* organizat
 | **U4** | Encrypted secrets, projects in the database, one-time import of the legacy config | ✅ |
 | **U5** | One-time task token and per-organization model keys in the proxy, monthly budget | ✅ |
 | **U6a** | Organization creation, members, invitations: API, privilege rules, tests | ✅ |
-| **U6b** | Web UI: members, invitations (copy the link), projects, secrets, budget, accept-invite page | next |
+| **U6b** | Web UI: members, invitations (copy the link), projects, secrets, budget, accept-invite page, organization picker | ✅ |
 | later | OIDC and GitLab / GitHub OAuth sign-in | planned |
 
 ### How U5 works
@@ -109,3 +109,18 @@ The budget is measured on the cost the agents report for each task, summed over 
 An admin creates an invitation for an e-mail address and a role (at most their own). The API returns a link token **once**; only its SHA-256 is stored, and listing invitations never shows it. The admin hands the link over by whatever channel they like — **nothing is sent by e-mail**.
 
 The recipient opens it and either **creates an account** (the e-mail comes from the invitation, they choose a password) or, if the address already has an account, **signs in first** and accepts. A signed-in user whose e-mail differs from the invitation is refused, so a leaked link alone is not enough. The link works once and expires after 7 days; unknown, expired and used links all answer the same 404. A new invitation for the same organization and address replaces the previous one.
+
+## The web UI
+
+Everything above is reachable from the browser (the UI text is in French). Admins and owners get a **Settings** tab:
+
+| Card | What you can do |
+|---|---|
+| Members | See everyone, change roles (only roles you may grant are offered), remove a member |
+| Invitations | Create a link (shown once, with a **Copy** button), see pending ones, revoke |
+| Projects | List, add (repository, branch, check command, protected paths, git token), delete |
+| Secrets | Store git tokens and model keys (the value is never shown again), delete |
+| Budget | See this month's spend, set or clear the monthly cap |
+
+Everyone gets the organization picker, **New organization** and **My account** (password change). Opening an invitation link (`/?invite=…`) shows a page to create the account — or to join with the account you are signed in with. Destructive actions ask for a second click instead of a browser dialog. Buttons the server would refuse are greyed out, but the server is what decides.
+

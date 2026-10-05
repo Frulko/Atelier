@@ -56,6 +56,8 @@ A project is a repository the agent may change. Fields:
 | `protectedPaths` | Path prefixes that mark an MR/PR as *review required* |
 | `gitSecretId` | The organization's git-token secret used to clone, push and open the MR/PR |
 
+Projects, secrets and the budget can be managed from the **Settings** tab (admins and owners), or through the API:
+
 ```bash
 # store a git token, then create a project that uses it (as an admin, with a session cookie)
 curl -b jar -H 'content-type: application/json' $URL/api/orgs/$ORG/secrets \

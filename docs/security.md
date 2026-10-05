@@ -54,7 +54,8 @@ Read these before exposing the service.
 
 - **The Docker socket is mounted into the orchestrator, which is equivalent to root on the host.** Acceptable for a trusted team on a dedicated machine; **not acceptable for a multi-tenant SaaS** with mutually untrusting customers. A filtering socket proxy helps; microVM isolation (gVisor/Firecracker) fixes it properly. See the [roadmap](roadmap.md).
 - **Spend is controlled coarsely.** The monthly budget counts the cost agents *report* per task, so one running task can overshoot it by up to `MAX_BUDGET_USD`. Tokens are not metered live in the proxy yet.
-- **No web UI yet for organizations, members, invitations, projects, secrets or the budget** (step U6b): they are managed through the API. Invitations are **links you hand over yourself** — nothing is e-mailed, so whoever receives the link can use it until it expires or is revoked (an existing account must also match the invited address).
+- **Invitations are links you hand over yourself** — nothing is e-mailed, so whoever receives the link can use it until it expires or is revoked (an existing account must also match the invited address).
+- **The web UI is French only**, and there is no SSO yet (local accounts only).
 - **Rate limiting is in memory**: it resets on restart and does not span several instances.
 - **No egress filtering of the orchestrator.** A user who may create projects can make it clone from any allowed `https` host; set `ATELIER_GIT_HOSTS` to restrict it.
 - **The sandbox has no Internet**, so the agent cannot `npm install`, and its image contains only Node. Projects that need dependencies need a prepared image or a registry proxy (not built).

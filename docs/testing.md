@@ -6,7 +6,7 @@ Three commands. All three must be green before a commit.
 |---|---|---|---|
 | `npm run check` | `orchestrator/` | Type-checks the TypeScript (`tsc --noEmit`) | Node |
 | `npm test` | `orchestrator/` | Unit and HTTP integration tests (`node --test`), in-memory database | Node |
-| `./scripts/smoke.sh` | repo root | End-to-end test of the whole stack in Docker, **no AI, no API key** | Docker |
+| `./scripts/smoke.sh` | repo root | End-to-end test of the whole stack in Docker, **no AI, no API key**. Also drives the web UI in a browser when Playwright is installed | Docker (+ `pip install playwright` and Chrome for the UI part) |
 
 ## What is covered
 
@@ -25,6 +25,7 @@ Three commands. All three must be green before a commit.
 | Model proxy against a fake provider: missing/wrong/revoked token, each organization's own key, no global fallback, 402 over budget, allowed routes only | `proxy.test.ts` |
 | Budget: month boundaries, per-organization spend, cap semantics, API roles, task creation refused when over budget | `budget.test.ts` |
 | Organizations, members, invitations: privilege escalation, single-use and expiry, hashed token, address match, last owner, cross-organization isolation | `members.test.ts` |
+| **The web UI in a real browser** (Playwright, `scripts/ui_check.py`): login with a wrong then right password, one screen at a time, a task run to "branch pushed", a secret that never reappears in the page, an invitation link opened by a second browser that joins as a member, single-use link, role change, two-click removal, logout, no console error | `smoke.sh` (skipped, with a notice, if Playwright is not installed) |
 | Invitation flow end to end (create, accept, reuse refused, new member's role and access) | `smoke.sh` |
 | 401 without a session, login, CSRF (403), password change revoking other devices, logout | `smoke.sh` |
 | Clone → sandbox → check → **fix loop** → commit → push → cleanup, with several projects | `smoke.sh` |
@@ -34,7 +35,7 @@ Three commands. All three must be green before a commit.
 - The **real Claude agent** inside the sandbox (proxy + SDK end to end). Only the fake agent runs in tests.
 - A **real GitLab merge request** and a **real GitHub pull request**. Code exists; it has only run against local git repositories.
 - Task **cancellation while an agent is running**.
-- The **browser UI**: its script is syntax-checked, but the pages have not been driven in a browser.
+- The UI only on **Chrome**, in light mode, at desktop width. Dark mode and phone width have not been looked at.
 - Docker-level isolation guarantees (resource limits, dropped capabilities) are configured but not asserted.
 
 ## The fake agent and the fake projects
@@ -46,7 +47,7 @@ To test without any AI, the sandbox can run a **deterministic fake agent** (`ATE
 | anything | appends a line to `NOTES.md` | task finishes, branch `atelier/<id>` pushed |
 | **"casse"** | also writes an invalid file | the check fails, the agent is re-run with the error, removes the file, the task finishes (fix loop) |
 
-`./scripts/demo.sh` starts this setup for you to click through.
+`./scripts/demo.sh` starts this setup for you to click through. To keep screenshots of the UI during the smoke test, set `UI_SHOTS=/some/dir`.
 
 ## Writing tests
 
