@@ -74,6 +74,17 @@ show todo-api "$ID" NOTES.md | grep -q "casse le projet" || fail "le changement 
 # 4. Nettoyage : plus aucun dossier de travail, plus aucun conteneur d'agent
 [ -z "$(ls -A "$S/work")" ] || fail "dossier de travail non nettoyé"
 [ -z "$(docker ps -aq --filter label=atelier)" ] || fail "conteneur d'agent resté"
+# 4b. Invitation : un nouveau compte rejoint l'organisation avec le rôle prévu, le lien ne sert qu'une fois
+IB='{"email":"neuf@smoke.test","role":"member"}'
+INV=$(curl -sf "${A[@]}" $O/invitations -d "$IB" | sed 's/.*"token":"\([^"]*\)".*/\1/')
+case "$INV" in inv_*) ;; *) fail "jeton d'invitation absent de la réponse" ;; esac
+AB="{\"token\":\"$INV\",\"password\":\"mdp-neuf-12345\"}"
+[ "$(code -c "$S/jar5" "${J[@]}" $U/api/auth/accept-invite -d "$AB")" = 201 ] || fail "invitation refusée"
+curl -sf -b "$S/jar5" $U/api/me | grep -q '"role":"member"' || fail "le nouveau compte n'a pas le rôle invité"
+[ "$(code "${J[@]}" $U/api/auth/accept-invite -d "$AB")" = 404 ] || fail "le lien d'invitation a servi deux fois"
+[ "$(code -b "$S/jar5" $O/members)" = 403 ] || fail "un membre peut lister les membres"
+[ "$(code -b "$S/jar5" $O/tasks)" = 200 ] || fail "le nouveau membre ne voit pas les tâches"
+
 # 5. Mot de passe : changer le mot de passe déconnecte les AUTRES appareils, pas celui-ci
 [ "$(login "$S/jar2" smoke)" = 200 ] || fail "2e appareil : connexion refusée"
 [ "$(code "${A[@]}" $U/api/auth/password -d '{"current":"faux","next":"nouveau-mdp-123"}')" = 403 ] || fail "changement accepté avec un mauvais mot de passe actuel"

@@ -1,6 +1,6 @@
 import http from "node:http";
 import { readFileSync } from "node:fs";
-import { addEvent, bus, createTask, getOrg, monthSpend, setOrgBudget, deleteProject, deleteSecret, getEvents, getProjectInOrg, getSecretRow, getTask, getTaskInOrg, getUserByEmail, insertProject, listProjects, listSecrets, listTasks, orgsOf, roleOf, secretInUse, updatePassword, updateProject, updateTask, type Evt, type Role, type User } from "./db.ts";
+import { addEvent, addMember, bus, consumeInvitation, countOrgsOf, countOwners, createOrg, createUser, deleteInvitation, findInvitation, insertInvitation, listInvitations, listMembers, removeMember, setMemberRole, createTask, getOrg, monthSpend, setOrgBudget, deleteProject, deleteSecret, getEvents, getProjectInOrg, getSecretRow, getTask, getTaskInOrg, getUserByEmail, insertProject, listProjects, listSecrets, listTasks, orgsOf, roleOf, secretInUse, updatePassword, updateProject, updateTask, type Evt, type Role, type User } from "./db.ts";
 import { storeSecret } from "./vault.ts";
 import { overBudget } from "./budget.ts";
 import { PROVIDERS } from "./proxy.ts";
@@ -8,7 +8,8 @@ import { rowToJson, validateProject } from "./projects.ts";
 import { hashPassword, MAX_PASSWORD, passwordProblem, verifyPassword } from "./auth.ts";
 import { cookieHeader, endOtherSessions, endSession, startSession, tokenFromCookie, userFromToken } from "./session.ts";
 import { FailureLimiter } from "./ratelimit.ts";
-import { can, type Action } from "./access.ts";
+import { can, canAssign, canTouch, ROLES, type Action } from "./access.ts";
+import { hashInviteToken, INVITE_TTL_MS, newInviteToken } from "./invites.ts";
 import { cancel, enqueue, newId } from "./pipeline.ts";
 
 const page = readFileSync(new URL("../public/index.html", import.meta.url));
@@ -82,6 +83,36 @@ export function createApp() {
         return json(res, 200, { ok: true }, { "set-cookie": cookieHeader(startSession(user.id), isSecure(req)) });
       }
 
+      // ---- accepter une invitation : ouverte à qui détient le jeton (nouveau compte) ou à l'invité connecté
+      if (req.method === "POST" && url.pathname === "/api/auth/accept-invite") {
+        const { token: invToken, password } = await body(req);
+        const inv = typeof invToken === "string" ? findInvitation(hashInviteToken(invToken)) : undefined;
+        if (!inv) return json(res, 404, { error: "invitation invalide ou expirée" }); // même réponse : inconnue, expirée ou déjà utilisée
+        const current = userFromToken(tokenFromCookie(req.headers.cookie));
+        if (current) {
+          // un jeton volé ne suffit pas : l'adresse du compte connecté doit être celle de l'invitation
+          if (current.email !== inv.email) return json(res, 403, { error: "cette invitation est destinée à une autre adresse e-mail" });
+          if (!roleOf(inv.org_id, current.id)) addMember(inv.org_id, current.id, inv.role);
+          consumeInvitation(inv.token_hash);
+          return json(res, 200, { ok: true, orgId: inv.org_id });
+        }
+        if (getUserByEmail(inv.email)) return json(res, 409, { error: "un compte existe déjà pour cette adresse : connecte-toi, puis rouvre le lien" });
+        if (typeof password !== "string") return json(res, 400, { error: "mot de passe requis" });
+        const problem = passwordProblem(password);
+        if (problem) return json(res, 400, { error: problem });
+        const hash = await hashPassword(password);
+        if (!findInvitation(inv.token_hash)) return json(res, 404, { error: "invitation invalide ou expirée" }); // acceptée entre-temps
+        try {
+          const u = createUser(inv.email, hash);
+          addMember(inv.org_id, u.id, inv.role);
+          consumeInvitation(inv.token_hash);
+          return json(res, 201, { ok: true, orgId: inv.org_id }, { "set-cookie": cookieHeader(startSession(u.id), isSecure(req)) });
+        } catch (e) {
+          if (!/UNIQUE/.test(String(e))) throw e;
+          return json(res, 409, { error: "un compte existe déjà pour cette adresse : connecte-toi, puis rouvre le lien" });
+        }
+      }
+
       // ---- tout le reste de l'API exige une session
       const token = tokenFromCookie(req.headers.cookie);
       const user = userFromToken(token);
@@ -92,6 +123,12 @@ export function createApp() {
         return json(res, 200, { ok: true }, { "set-cookie": cookieHeader("", isSecure(req), 0) });
       }
       if (req.method === "GET" && url.pathname === "/api/me") return json(res, 200, { user: { id: user.id, email: user.email }, orgs: orgsOf(user.id) });
+      if (req.method === "POST" && url.pathname === "/api/orgs") {
+        const { name } = await body(req);
+        if (typeof name !== "string" || !name.trim() || name.length > 80) return json(res, 400, { error: "nom invalide" });
+        if (countOrgsOf(user.id) >= 10) return json(res, 409, { error: "limite de 10 organisations atteinte" });
+        return json(res, 201, { id: createOrg(name.trim(), user.id), name: name.trim(), role: "owner" });
+      }
       if (req.method === "POST" && url.pathname === "/api/auth/password") {
         const { current, next } = await body(req);
         if (typeof current !== "string" || typeof next !== "string") return json(res, 400, { error: "requête invalide" });
@@ -118,11 +155,59 @@ export function createApp() {
       }
 
       // ---- ressources d'une organisation : /api/orgs/:org/...
-      const o = /^\/api\/orgs\/([0-9a-f]{16})\/(projects|tasks|secrets)(?:\/([0-9a-f]{8,16}))?(\/events|\/cancel)?$/.exec(url.pathname);
+      const o = /^\/api\/orgs\/([0-9a-f]{16})\/(projects|tasks|secrets|members|invitations)(?:\/([0-9a-f]{8,16}))?(\/events|\/cancel)?$/.exec(url.pathname);
       if (o) {
         const [, orgId, kind, itemId, sub] = o;
         const deny = (a: Access) => a === "not_found" ? json(res, 404, { error: "introuvable" }) : json(res, 403, { error: "droits insuffisants" });
         const gate = (action: Action) => access(user, orgId, action);
+
+        // ---------------- membres
+        if (kind === "members") {
+          const a = gate("member:manage");
+          if (typeof a === "string") return deny(a);
+          if (req.method === "GET" && !itemId) return json(res, 200, listMembers(orgId).map((m) => ({ userId: m.user_id, email: m.email, role: m.role })));
+          if (itemId && !sub) {
+            const current = roleOf(orgId, itemId);
+            if (!current) return json(res, 404, { error: "introuvable" });
+            const lastOwner = current === "owner" && countOwners(orgId) === 1;
+            if (req.method === "PATCH") {
+              const { role } = await body(req);
+              if (!ROLES.includes(role)) return json(res, 400, { error: "rôle invalide" });
+              if (!canTouch(a.role, current) || !canAssign(a.role, role)) return json(res, 403, { error: "droits insuffisants pour ce rôle" });
+              if (lastOwner && role !== "owner") return json(res, 409, { error: "l'organisation doit garder au moins un propriétaire" });
+              setMemberRole(orgId, itemId, role);
+              return json(res, 200, { userId: itemId, role });
+            }
+            if (req.method === "DELETE") {
+              if (!canTouch(a.role, current)) return json(res, 403, { error: "droits insuffisants pour ce rôle" });
+              if (lastOwner) return json(res, 409, { error: "l'organisation doit garder au moins un propriétaire" });
+              removeMember(orgId, itemId);
+              return json(res, 200, { ok: true });
+            }
+          }
+        }
+
+        // ---------------- invitations (le lien n'est montré qu'à la création ; rien n'est envoyé par e-mail)
+        if (kind === "invitations") {
+          const a = gate("member:manage");
+          if (typeof a === "string") return deny(a);
+          if (req.method === "GET" && !itemId) return json(res, 200, listInvitations(orgId));
+          if (req.method === "POST" && !itemId) {
+            const { email, role } = await body(req);
+            if (typeof email !== "string" || email.length > 254 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return json(res, 400, { error: "adresse e-mail invalide" });
+            if (!ROLES.includes(role)) return json(res, 400, { error: "rôle invalide" });
+            if (!canAssign(a.role, role)) return json(res, 403, { error: "on ne peut inviter qu'avec un rôle inférieur ou égal au sien" });
+            const existing = getUserByEmail(email);
+            if (existing && roleOf(orgId, existing.id)) return json(res, 409, { error: "cette personne est déjà membre" });
+            const token = newInviteToken();
+            const expiresAt = Date.now() + INVITE_TTL_MS;
+            const id = insertInvitation(orgId, email, role, user.id, hashInviteToken(token), expiresAt);
+            return json(res, 201, { id, email: email.trim().toLowerCase(), role, expiresAt, token });
+          }
+          if (req.method === "DELETE" && itemId && !sub) {
+            return deleteInvitation(itemId, orgId) ? json(res, 200, { ok: true }) : json(res, 404, { error: "introuvable" });
+          }
+        }
 
         // ---------------- projets
         if (kind === "projects") {

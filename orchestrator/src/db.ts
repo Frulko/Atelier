@@ -51,6 +51,12 @@ db.exec(`
     git_secret_id text references secrets(id), created_at integer not null,
     unique (org_id, slug)
   );
+  create table if not exists invitations (
+    id text primary key, token_hash text not null unique,
+    org_id text not null references orgs(id) on delete cascade, email text not null,
+    role text not null check (role in ('owner','admin','member','viewer')),
+    created_by text not null, created_at integer not null, expires_at integer not null
+  );
   create table if not exists sessions (
     token_hash text primary key, user_id text not null references users(id) on delete cascade,
     created_at integer not null, expires_at integer not null
@@ -267,3 +273,46 @@ export function monthSpend(orgId: string, now = Date.now()): number {
 /** Clé de modèle la plus récente de l'organisation pour ce fournisseur. */
 export const latestProviderSecret = (orgId: string, provider: string) =>
   db.prepare("select * from secrets where org_id = ? and kind = 'provider_key' and provider = ? order by created_at desc, rowid desc limit 1").get(orgId, provider) as SecretRow | undefined;
+
+/* ------------------------------ membres et invitations ------------------------------ */
+
+export type Member = { user_id: string; email: string; role: Role };
+export const listMembers = (orgId: string) =>
+  db.prepare("select m.user_id, u.email, m.role from memberships m join users u on u.id = m.user_id where m.org_id = ? order by u.email").all(orgId) as Member[];
+
+export const setMemberRole = (orgId: string, userId: string, role: Role) =>
+  db.prepare("update memberships set role = ? where org_id = ? and user_id = ?").run(role, orgId, userId).changes > 0;
+
+export const removeMember = (orgId: string, userId: string) =>
+  db.prepare("delete from memberships where org_id = ? and user_id = ?").run(orgId, userId).changes > 0;
+
+export const countOwners = (orgId: string) =>
+  (db.prepare("select count(*) as n from memberships where org_id = ? and role = 'owner'").get(orgId) as { n: number }).n;
+
+export type Invitation = { id: string; token_hash: string; org_id: string; email: string; role: Role; created_by: string; created_at: number; expires_at: number };
+
+/** Une seule invitation en attente par (organisation, e-mail) : la nouvelle remplace l'ancienne. */
+export function insertInvitation(orgId: string, email: string, role: Role, createdBy: string, tokenHash: string, expiresAt: number) {
+  db.prepare("delete from invitations where org_id = ? and email = ?").run(orgId, normEmail(email));
+  const id = rid();
+  db.prepare("insert into invitations (id, token_hash, org_id, email, role, created_by, created_at, expires_at) values (?,?,?,?,?,?,?,?)")
+    .run(id, tokenHash, orgId, normEmail(email), role, createdBy, Date.now(), expiresAt);
+  return id;
+}
+
+/** Sans le hash du jeton : l'API ne peut pas le divulguer. */
+export const listInvitations = (orgId: string) =>
+  db.prepare("select id, email, role, created_at, expires_at from invitations where org_id = ? and expires_at > ? order by created_at").all(orgId, Date.now()) as Omit<Invitation, "token_hash" | "org_id" | "created_by">[];
+
+export const findInvitation = (tokenHash: string) =>
+  db.prepare("select * from invitations where token_hash = ? and expires_at > ?").get(tokenHash, Date.now()) as Invitation | undefined;
+
+export const deleteInvitation = (id: string, orgId: string) =>
+  db.prepare("delete from invitations where id = ? and org_id = ?").run(id, orgId).changes > 0;
+
+/** L'invitation est à usage unique : consommée dès qu'elle est acceptée. */
+export const consumeInvitation = (tokenHash: string) =>
+  void db.prepare("delete from invitations where token_hash = ?").run(tokenHash);
+
+export const countOrgsOf = (userId: string) =>
+  (db.prepare("select count(*) as n from memberships where user_id = ?").get(userId) as { n: number }).n;
