@@ -12,6 +12,8 @@ const HARDENING = [
 /** Lance l'agent dans un conteneur jetable ; chaque ligne JSON de stdout est remise à onEvent. */
 export function runAgent(opts: {
   name: string; tree: string; prompt: string; engine: string;
+  /** Jeton de tâche : tient lieu de clé d'API dans le bac à sable (voir tokens.ts). */
+  token: string;
   onEvent: (e: { type: string; text?: string; name?: string; detail?: string; ok?: boolean; cost?: number }) => void;
 }): Promise<{ ok: boolean; cost: number }> {
   const args = [
@@ -22,9 +24,9 @@ export function runAgent(opts: {
     "-e", `ATELIER_ENGINE=${opts.engine}`,
     // Un préfixe par fournisseur : le proxy choisit l'amont et injecte la vraie clé.
     "-e", `ANTHROPIC_BASE_URL=${cfg.proxyUrl}/anthropic`,
-    "-e", "ANTHROPIC_API_KEY=cle-factice-le-proxy-met-la-vraie",
+    "-e", "ANTHROPIC_API_KEY",
     "-e", `OPENAI_BASE_URL=${cfg.proxyUrl}/openai/v1`,
-    "-e", "OPENAI_API_KEY=cle-factice-le-proxy-met-la-vraie",
+    "-e", "OPENAI_API_KEY",
     "-e", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1",
     "-e", "DISABLE_TELEMETRY=1",
     "-e", `MAX_BUDGET_USD=${cfg.maxBudgetUsd}`,
@@ -32,7 +34,11 @@ export function runAgent(opts: {
     cfg.sandboxImage,
   ];
   return new Promise((resolve) => {
-    const p = spawn("docker", args, { env: { ...process.env, TASK_PROMPT: opts.prompt } });
+    // Environnement MINIMAL du client docker : seules les variables relayées par « -e NOM » entrent dans le conteneur,
+    // et ni les clés de l'orchestrateur ni ses autres secrets ne sont dans cet environnement.
+    const env: NodeJS.ProcessEnv = { PATH: process.env.PATH, HOME: process.env.HOME, TASK_PROMPT: opts.prompt, ANTHROPIC_API_KEY: opts.token, OPENAI_API_KEY: opts.token };
+    for (const k of ["DOCKER_HOST", "DOCKER_CONFIG", "DOCKER_CONTEXT"]) if (process.env[k]) env[k] = process.env[k];
+    const p = spawn("docker", args, { env });
     const timer = setTimeout(() => { opts.onEvent({ type: "error", text: "Délai dépassé, agent arrêté." }); kill(opts.name); }, cfg.agentTimeoutS * 1000);
     let ok = false, cost = 0, buf = "";
     const line = (l: string) => {

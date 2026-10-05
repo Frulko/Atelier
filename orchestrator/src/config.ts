@@ -53,7 +53,8 @@ export const cfg = {
   port: Number(env("PORT", "8080")),
   proxyPort: Number(env("PROXY_PORT", "8081")),
   password: need("ATELIER_PASSWORD"),
-  /** Clés des fournisseurs de modèles : elles restent ICI, le bac à sable ne les voit jamais. Au moins une est requise. */
+  /** Clés des fournisseurs lues dans l'environnement : servent UNIQUEMENT à l'import initial dans l'organisation « Défaut ».
+   *  Ensuite les clés sont des secrets par organisation (voir vault.ts) ; le proxy n'utilise jamais ces variables. */
   providerKeys: {
     anthropic: env("ANTHROPIC_API_KEY", ""),
     openai: env("OPENAI_API_KEY", ""),
@@ -77,5 +78,3 @@ export const cfg = {
   gitAuthorName: env("GIT_AUTHOR_NAME", "Atelier")!,
   gitAuthorEmail: env("GIT_AUTHOR_EMAIL", "atelier@localhost")!,
 };
-
-if (!Object.values(cfg.providerKeys).some(Boolean)) throw new Error("Aucune clé de fournisseur (ANTHROPIC_API_KEY, OPENAI_API_KEY, OPENROUTER_API_KEY…)");

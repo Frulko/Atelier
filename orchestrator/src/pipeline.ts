@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { cfg } from "./config.ts";
 import { addEvent, getProjectById, getTask, updateTask } from "./db.ts";
 import { rowToProject } from "./projects.ts";
+import { issueTaskToken, revokeTaskTokens } from "./tokens.ts";
 import { clone, changedFiles, commitAndPush, openMergeRequest, cleanup } from "./git.ts";
 import { runAgent, runCheck, kill } from "./sandbox.ts";
 
@@ -31,6 +32,7 @@ async function execute(id: string) {
     const row = getProjectById(task.project);
     if (!row) throw new Error("Projet introuvable (supprimé ?).");
     const p = rowToProject(row); // déchiffre le token git ici, le temps de la tâche
+    const token = issueTaskToken(id, row.org_id); // jeton valable pour cette tâche seulement ; révoqué à la fin
     log("step", "Copie du projet dans le bac à sable…");
     const ws = await clone(p, id, branch);
 
@@ -41,7 +43,7 @@ async function execute(id: string) {
       log("step", attempt === 1 ? "L'agent travaille…" : `L'agent corrige (essai ${attempt}/${cfg.maxAttempts})…`);
       const name = `atelier-${id}-agent${attempt}`;
       current.set(id, name);
-      const r = await runAgent({ name, tree: ws.tree, prompt, engine: p.engine, onEvent: (e) => log(e.type, [e.text, e.name, e.detail].filter(Boolean).join(" ")) });
+      const r = await runAgent({ name, tree: ws.tree, prompt, engine: p.engine, token, onEvent: (e) => log(e.type, [e.text, e.name, e.detail].filter(Boolean).join(" ")) });
       cost += r.cost;
       updateTask(id, { cost });
       if (cancelled.has(id)) throw new Error("cancelled");
@@ -77,6 +79,7 @@ async function execute(id: string) {
     updateTask(id, { status: stopped ? "cancelled" : "failed" });
     log(stopped ? "step" : "error", stopped ? "Tâche annulée." : String(e.message || e));
   } finally {
+    revokeTaskTokens(id);
     current.delete(id);
     cancelled.delete(id);
     await cleanup(id);

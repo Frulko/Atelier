@@ -59,6 +59,8 @@ db.exec(`
 db.exec("pragma foreign_keys = on");
 
 // Migration M1 → U3 : les bases créées avant les organisations n'ont pas ces colonnes.
+const orgCols = (db.prepare("pragma table_info(orgs)").all() as { name: string }[]).map((c) => c.name);
+if (!orgCols.includes("budget_usd_month")) db.exec("alter table orgs add column budget_usd_month real");
 const taskCols = (db.prepare("pragma table_info(tasks)").all() as { name: string }[]).map((c) => c.name);
 if (!taskCols.includes("org_id")) db.exec("alter table tasks add column org_id text");
 if (!taskCols.includes("user_id")) db.exec("alter table tasks add column user_id text");
@@ -243,3 +245,25 @@ export const countProjects = () => (db.prepare("select count(*) as n from projec
 /** Tâches d'avant U4 : leur champ « project » contenait l'identifiant de la config ; il pointe désormais le projet en base. */
 export const remapTaskProject = (orgId: string, from: string, to: string) =>
   void db.prepare("update tasks set project = ? where org_id = ? and project = ?").run(to, orgId, from);
+
+/* ----------------------- organisation : budget mensuel ----------------------- */
+
+export type OrgRow = { id: string; name: string; budget_usd_month: number | null };
+export const getOrg = (id: string) =>
+  db.prepare("select id, name, budget_usd_month from orgs where id = ?").get(id) as OrgRow | undefined;
+
+/** null = pas de plafond. */
+export const setOrgBudget = (orgId: string, usd: number | null) =>
+  void db.prepare("update orgs set budget_usd_month = ? where id = ?").run(usd, orgId);
+
+/** Dépense déclarée par les agents depuis le début du mois (UTC) pour cette organisation. */
+export function monthSpend(orgId: string, now = Date.now()): number {
+  const d = new Date(now);
+  const start = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
+  const end = Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1);
+  return (db.prepare("select coalesce(sum(cost), 0) as c from tasks where org_id = ? and created_at >= ? and created_at < ?").get(orgId, start, end) as { c: number }).c;
+}
+
+/** Clé de modèle la plus récente de l'organisation pour ce fournisseur. */
+export const latestProviderSecret = (orgId: string, provider: string) =>
+  db.prepare("select * from secrets where org_id = ? and kind = 'provider_key' and provider = ? order by created_at desc, rowid desc limit 1").get(orgId, provider) as SecretRow | undefined;

@@ -1,7 +1,9 @@
 import http from "node:http";
 import { readFileSync } from "node:fs";
-import { addEvent, bus, createTask, deleteProject, deleteSecret, getEvents, getProjectInOrg, getSecretRow, getTask, getTaskInOrg, getUserByEmail, insertProject, listProjects, listSecrets, listTasks, orgsOf, roleOf, secretInUse, updatePassword, updateProject, updateTask, type Evt, type Role, type User } from "./db.ts";
+import { addEvent, bus, createTask, getOrg, monthSpend, setOrgBudget, deleteProject, deleteSecret, getEvents, getProjectInOrg, getSecretRow, getTask, getTaskInOrg, getUserByEmail, insertProject, listProjects, listSecrets, listTasks, orgsOf, roleOf, secretInUse, updatePassword, updateProject, updateTask, type Evt, type Role, type User } from "./db.ts";
 import { storeSecret } from "./vault.ts";
+import { overBudget } from "./budget.ts";
+import { PROVIDERS } from "./proxy.ts";
 import { rowToJson, validateProject } from "./projects.ts";
 import { hashPassword, MAX_PASSWORD, passwordProblem, verifyPassword } from "./auth.ts";
 import { cookieHeader, endOtherSessions, endSession, startSession, tokenFromCookie, userFromToken } from "./session.ts";
@@ -44,6 +46,14 @@ function access(user: User, orgId: string, action: Action): Access {
   if (!role) return "not_found";
   return can(role, action) ? { role } : "forbidden";
 }
+
+const denyAccess = (res: http.ServerResponse, a: "not_found" | "forbidden") =>
+  a === "not_found" ? json(res, 404, { error: "introuvable" }) : json(res, 403, { error: "droits insuffisants" });
+
+const orgJson = (orgId: string) => {
+  const o = getOrg(orgId)!;
+  return { id: o.id, name: o.name, budgetUsdMonth: o.budget_usd_month, monthSpendUsd: Math.round(monthSpend(orgId) * 100) / 100 };
+};
 
 const limiter = new FailureLimiter();
 const DUMMY_HASH = await hashPassword("mot de passe factice pour égaliser le temps de réponse");
@@ -91,6 +101,20 @@ export function createApp() {
         updatePassword(user.id, await hashPassword(next));
         endOtherSessions(user.id, token); // les autres appareils sont déconnectés
         return json(res, 200, { ok: true });
+      }
+
+      // ---- l'organisation elle-même : budget mensuel des modèles
+      const og = /^\/api\/orgs\/([0-9a-f]{16})$/.exec(url.pathname);
+      if (og && (req.method === "GET" || req.method === "PATCH")) {
+        const a = access(user, og[1], "org:budget");
+        if (typeof a === "string") return denyAccess(res, a);
+        if (req.method === "PATCH") {
+          const { budgetUsdMonth } = await body(req);
+          const ok = budgetUsdMonth === null || (typeof budgetUsdMonth === "number" && Number.isFinite(budgetUsdMonth) && budgetUsdMonth >= 0 && budgetUsdMonth <= 1e6);
+          if (!ok) return json(res, 400, { error: "budget invalide (nombre ≥ 0, ou null pour illimité)" });
+          setOrgBudget(og[1], budgetUsdMonth);
+        }
+        return json(res, 200, orgJson(og[1]));
       }
 
       // ---- ressources d'une organisation : /api/orgs/:org/...
@@ -157,7 +181,7 @@ export function createApp() {
           if (req.method === "POST" && !itemId) {
             const { kind: k, provider, label, value } = await body(req);
             if (k !== "git_token" && k !== "provider_key") return json(res, 400, { error: "type de secret invalide" });
-            if (k === "provider_key" && !["anthropic", "openai", "openrouter"].includes(provider)) return json(res, 400, { error: "fournisseur invalide" });
+            if (k === "provider_key" && !Object.keys(PROVIDERS).includes(provider)) return json(res, 400, { error: "fournisseur invalide" });
             if (typeof label !== "string" || !label.trim() || label.length > 80) return json(res, 400, { error: "libellé invalide" });
             if (typeof value !== "string" || !value.trim() || value.length > 500) return json(res, 400, { error: "valeur invalide" });
             return json(res, 201, storeSecret(orgId, k, k === "provider_key" ? provider : null, label.trim(), value.trim()));
@@ -182,6 +206,7 @@ export function createApp() {
             const { project, prompt } = await body(req);
             const row = typeof project === "string" ? getProjectInOrg(project, orgId) : undefined; // le projet doit être CELUI de l'organisation
             if (!row || typeof prompt !== "string" || !prompt.trim()) return json(res, 400, { error: "projet ou demande invalide" });
+            if (overBudget(orgId)) return json(res, 402, { error: "budget mensuel de l'organisation épuisé" });
             const id = newId();
             createTask(id, orgId, user.id, row.id, prompt.trim());
             addEvent(id, "step", "Demande reçue, en file d'attente.");

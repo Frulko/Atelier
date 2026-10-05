@@ -1,7 +1,7 @@
 import type { Role } from "./db.ts";
 
 // Une seule table de droits : ajouter une action = une ligne ici.
-export type Action = "task:read" | "task:create" | "task:cancel_own" | "task:cancel_any" | "project:manage" | "secret:manage";
+export type Action = "task:read" | "task:create" | "task:cancel_own" | "task:cancel_any" | "project:manage" | "secret:manage" | "org:budget";
 
 const RANK: Record<Role, number> = { viewer: 0, member: 1, admin: 2, owner: 3 };
 const MIN: Record<Action, Role> = {
@@ -11,6 +11,7 @@ const MIN: Record<Action, Role> = {
   "task:cancel_any": "admin",
   "project:manage": "admin",
   "secret:manage": "admin",
+  "org:budget": "admin",
 };
 
 export const can = (role: Role, action: Action) => RANK[role] >= RANK[MIN[action]];

@@ -67,3 +67,9 @@ export function readSecret(orgId: string, secretId: string | null): string | und
   const row = db.getSecretRow(secretId, orgId);
   return row ? decrypt(row.ciphertext, orgId, secretId) : undefined;
 }
+
+/** Clé de modèle de CETTE organisation pour un fournisseur (la plus récente), ou undefined. Jamais de repli sur une clé globale. */
+export function providerKey(orgId: string, provider: string): string | undefined {
+  const row = db.latestProviderSecret(orgId, provider);
+  return row ? decrypt(row.ciphertext, orgId, row.id) : undefined;
+}
