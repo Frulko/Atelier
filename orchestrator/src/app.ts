@@ -1,13 +1,13 @@
 import http from "node:http";
 import { readFileSync } from "node:fs";
-import { orgStats, orgUsage, queryAudit, userActivity, getUserById, STATUSES, queryTasks, getTaskDetail, type Status, addEvent, addMember, bus, consumeInvitation, countOrgsOf, countOwners, createOrg, createUser, deleteInvitation, findInvitation, insertInvitation, listInvitations, listMembers, removeMember, setMemberRole, createTask, getOrg, monthSpend, setOrgBudget, deleteProject, deleteSecret, getEvents, getProjectInOrg, getSecretRow, getTask, getTaskInOrg, getUserByEmail, insertProject, listProjects, listSecrets, listTasks, orgsOf, roleOf, secretInUse, updatePassword, updateProject, updateTask, type Evt, type Role, type User } from "./db.ts";
+import { listSessions, deleteSessionByPrefix, setUserName, renameOrg, activeTaskCount, deleteOrgCascade, orgStats, orgUsage, queryAudit, userActivity, getUserById, STATUSES, queryTasks, getTaskDetail, type Status, addEvent, addMember, bus, consumeInvitation, countOrgsOf, countOwners, createOrg, createUser, deleteInvitation, findInvitation, insertInvitation, listInvitations, listMembers, removeMember, setMemberRole, createTask, getOrg, monthSpend, setOrgBudget, deleteProject, deleteSecret, getEvents, getProjectInOrg, getSecretRow, getTask, getTaskInOrg, getUserByEmail, insertProject, listProjects, listSecrets, listTasks, orgsOf, roleOf, secretInUse, updatePassword, updateProject, updateTask, type Evt, type Role, type User } from "./db.ts";
 import { storeSecret } from "./vault.ts";
 import { audit, auditToCsv } from "./audit.ts";
 import { overBudget } from "./budget.ts";
 import { PROVIDERS } from "./proxy.ts";
 import { rowToJson, validateProject } from "./projects.ts";
 import { hashPassword, MAX_PASSWORD, passwordProblem, verifyPassword } from "./auth.ts";
-import { cookieHeader, endOtherSessions, endSession, startSession, tokenFromCookie, userFromToken } from "./session.ts";
+import { cookieHeader, currentSessionId, endOtherSessions, endSession, sessionId, startSession, tokenFromCookie, userFromToken } from "./session.ts";
 import { FailureLimiter } from "./ratelimit.ts";
 import { can, canAssign, canTouch, ROLES, type Action } from "./access.ts";
 import { hashInviteToken, INVITE_TTL_MS, newInviteToken } from "./invites.ts";
@@ -57,6 +57,8 @@ const orgJson = (orgId: string) => {
   return { id: o.id, name: o.name, budgetUsdMonth: o.budget_usd_month, monthSpendUsd: Math.round(monthSpend(orgId) * 100) / 100 };
 };
 
+const device = (req: http.IncomingMessage) => ({ userAgent: String(req.headers["user-agent"] ?? ""), ip: clientIp(req) });
+
 const limiter = new FailureLimiter();
 const DUMMY_HASH = await hashPassword("mot de passe factice pour égaliser le temps de réponse");
 
@@ -82,7 +84,7 @@ export function createApp() {
         if (!user || !ok) { keys.forEach((k) => limiter.fail(k)); if (user) audit({ userId: user.id, ip: clientIp(req) }, "auth.login_failed"); return json(res, 401, { error: "e-mail ou mot de passe incorrect" }); }
         keys.forEach((k) => limiter.reset(k));
         audit({ userId: user.id, ip: clientIp(req) }, "auth.login");
-        return json(res, 200, { ok: true }, { "set-cookie": cookieHeader(startSession(user.id), isSecure(req)) });
+        return json(res, 200, { ok: true }, { "set-cookie": cookieHeader(startSession(user.id, Date.now(), device(req)), isSecure(req)) });
       }
 
       // ---- accepter une invitation : ouverte à qui détient le jeton (nouveau compte) ou à l'invité connecté
@@ -110,7 +112,7 @@ export function createApp() {
           addMember(inv.org_id, u.id, inv.role);
           consumeInvitation(inv.token_hash);
           audit({ orgId: inv.org_id, userId: u.id, ip: clientIp(req) }, "invitation.accept", { type: "invitation", id: inv.id }, { email: inv.email, role: inv.role, newAccount: true });
-          return json(res, 201, { ok: true, orgId: inv.org_id }, { "set-cookie": cookieHeader(startSession(u.id), isSecure(req)) });
+          return json(res, 201, { ok: true, orgId: inv.org_id }, { "set-cookie": cookieHeader(startSession(u.id, Date.now(), device(req)), isSecure(req)) });
         } catch (e) {
           if (!/UNIQUE/.test(String(e))) throw e;
           return json(res, 409, { error: "un compte existe déjà pour cette adresse : connecte-toi, puis rouvre le lien" });
@@ -128,7 +130,30 @@ export function createApp() {
         return json(res, 200, { ok: true }, { "set-cookie": cookieHeader("", isSecure(req), 0) });
       }
       if (req.method === "GET" && url.pathname === "/api/me/activity") return json(res, 200, userActivity(user.id).map((a) => ({ id: a.id, ts: a.ts, action: a.action, orgId: a.org_id, orgName: a.org_name, targetType: a.target_type, targetId: a.target_id, meta: a.meta ? JSON.parse(a.meta) : null, ip: a.ip })));
-      if (req.method === "GET" && url.pathname === "/api/me") return json(res, 200, { user: { id: user.id, email: user.email }, orgs: orgsOf(user.id) });
+      if (req.method === "GET" && url.pathname === "/api/me") return json(res, 200, { user: { id: user.id, email: user.email, name: user.name }, orgs: orgsOf(user.id) });
+      if (req.method === "PATCH" && url.pathname === "/api/me") {
+        const { name } = await body(req);
+        if (name !== null && (typeof name !== "string" || name.trim().length > 80)) return json(res, 400, { error: "nom invalide (80 caractères au plus)" });
+        setUserName(user.id, name === null || !name.trim() ? null : name.trim());
+        audit({ userId: user.id, ip: clientIp(req) }, "auth.profile_update");
+        return json(res, 200, { id: user.id, email: user.email, name: name === null || !name.trim() ? null : name.trim() });
+      }
+      if (url.pathname === "/api/me/sessions" && req.method === "GET") {
+        const here = currentSessionId(token);
+        return json(res, 200, listSessions(user.id).map((x) => ({ id: sessionId(x.token_hash), createdAt: x.created_at, lastUsedAt: x.last_used_at ?? x.created_at, expiresAt: x.expires_at, userAgent: x.user_agent, ip: x.ip, current: sessionId(x.token_hash) === here })));
+      }
+      if (url.pathname === "/api/me/sessions/revoke-others" && req.method === "POST") {
+        endOtherSessions(user.id, token);
+        audit({ userId: user.id, ip: clientIp(req) }, "auth.sessions_revoke_others");
+        return json(res, 200, { ok: true });
+      }
+      const sm = /^\/api\/me\/sessions\/([0-9a-f]{16})$/.exec(url.pathname);
+      if (sm && req.method === "DELETE") {
+        if (!deleteSessionByPrefix(user.id, sm[1])) return json(res, 404, { error: "introuvable" }); // pas la vôtre, ou déjà révoquée
+        audit({ userId: user.id, ip: clientIp(req) }, "auth.session_revoke");
+        const wasCurrent = sm[1] === currentSessionId(token);
+        return json(res, 200, { ok: true, current: wasCurrent }, wasCurrent ? { "set-cookie": cookieHeader("", isSecure(req), 0) } : {});
+      }
       if (req.method === "POST" && url.pathname === "/api/orgs") {
         const { name } = await body(req);
         if (typeof name !== "string" || !name.trim() || name.length > 80) return json(res, 400, { error: "nom invalide" });
@@ -149,19 +174,40 @@ export function createApp() {
         return json(res, 200, { ok: true });
       }
 
-      // ---- l'organisation elle-même : budget mensuel des modèles
+      // ---- l'organisation elle-même : nom, budget mensuel des modèles, suppression
       const og = /^\/api\/orgs\/([0-9a-f]{16})$/.exec(url.pathname);
-      if (og && (req.method === "GET" || req.method === "PATCH")) {
+      if (og && req.method === "GET") {
         const a = access(user, og[1], "org:budget");
+        return typeof a === "string" ? denyAccess(res, a) : json(res, 200, orgJson(og[1]));
+      }
+      if (og && req.method === "PATCH") {
+        const b = await body(req);
+        const wantsName = b.name !== undefined, wantsBudget = b.budgetUsdMonth !== undefined;
+        if (!wantsName && !wantsBudget) return json(res, 400, { error: "rien à modifier" });
+        const a = access(user, og[1], wantsName ? "org:rename" : "org:budget");
         if (typeof a === "string") return denyAccess(res, a);
-        if (req.method === "PATCH") {
-          const { budgetUsdMonth } = await body(req);
-          const ok = budgetUsdMonth === null || (typeof budgetUsdMonth === "number" && Number.isFinite(budgetUsdMonth) && budgetUsdMonth >= 0 && budgetUsdMonth <= 1e6);
-          if (!ok) return json(res, 400, { error: "budget invalide (nombre ≥ 0, ou null pour illimité)" });
-          setOrgBudget(og[1], budgetUsdMonth);
-          audit({ orgId: og[1], userId: user.id, ip: clientIp(req) }, "org.budget_set", { type: "org", id: og[1] }, { budgetUsdMonth });
+        const ctx = { orgId: og[1], userId: user.id, ip: clientIp(req) };
+        if (wantsName) {
+          if (typeof b.name !== "string" || !b.name.trim() || b.name.trim().length > 80) return json(res, 400, { error: "nom invalide" });
         }
+        if (wantsBudget) {
+          const v = b.budgetUsdMonth;
+          if (!(v === null || (typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 1e6))) return json(res, 400, { error: "budget invalide (nombre ≥ 0, ou null pour illimité)" });
+        }
+        if (wantsName) { const from = getOrg(og[1])!.name; renameOrg(og[1], b.name.trim()); audit(ctx, "org.rename", { type: "org", id: og[1] }, { from, to: b.name.trim() }); }
+        if (wantsBudget) { setOrgBudget(og[1], b.budgetUsdMonth); audit(ctx, "org.budget_set", { type: "org", id: og[1] }, { budgetUsdMonth: b.budgetUsdMonth }); }
         return json(res, 200, orgJson(og[1]));
+      }
+      if (og && req.method === "DELETE") {
+        const a = access(user, og[1], "org:delete");
+        if (typeof a === "string") return denyAccess(res, a);
+        const org = getOrg(og[1])!;
+        const { confirm } = await body(req);
+        if (confirm !== org.name) return json(res, 400, { error: "confirmation incorrecte : tape le nom exact de l'organisation" });
+        if (activeTaskCount(og[1]) > 0) return json(res, 409, { error: "des tâches sont en cours : annule-les ou attends leur fin" });
+        deleteOrgCascade(og[1]);
+        audit({ userId: user.id, ip: clientIp(req) }, "org.delete", { type: "org", id: og[1] }, { name: org.name }); // hors organisation : le journal de l'organisation disparaît avec elle
+        return json(res, 200, { ok: true });
       }
 
       // ---- ressources d'une organisation : /api/orgs/:org/...

@@ -92,6 +92,12 @@ if (!taskCols.includes("finished_at")) db.exec("alter table tasks add column fin
 if (!taskCols.includes("files_json")) db.exec("alter table tasks add column files_json text");
 if (!taskCols.includes("flagged")) db.exec("alter table tasks add column flagged integer not null default 0");
 db.exec("create index if not exists tasks_org on tasks(org_id, created_at)");
+const userCols = (db.prepare("pragma table_info(users)").all() as { name: string }[]).map((c) => c.name);
+if (!userCols.includes("name")) db.exec("alter table users add column name text");
+const sessCols = (db.prepare("pragma table_info(sessions)").all() as { name: string }[]).map((c) => c.name);
+if (!sessCols.includes("user_agent")) db.exec("alter table sessions add column user_agent text");
+if (!sessCols.includes("ip")) db.exec("alter table sessions add column ip text");
+if (!sessCols.includes("last_used_at")) db.exec("alter table sessions add column last_used_at integer");
 
 /** Diffuse chaque événement aux clients SSE connectés. */
 export const bus = new EventEmitter();
@@ -170,7 +176,7 @@ export const failOrphans = () =>
 /* ------------------------- utilisateurs / organisations ------------------------- */
 
 export type Role = "owner" | "admin" | "member" | "viewer";
-export type User = { id: string; email: string; password_hash: string; created_at: number };
+export type User = { id: string; email: string; name: string | null; password_hash: string; created_at: number };
 
 const rid = () => randomBytes(8).toString("hex");
 export const normEmail = (e: string) => e.trim().toLowerCase();
@@ -181,7 +187,7 @@ export const getUserByEmail = (email: string) =>
   db.prepare("select * from users where email = ?").get(normEmail(email)) as User | undefined;
 
 export function createUser(email: string, passwordHash: string): User {
-  const u = { id: rid(), email: normEmail(email), password_hash: passwordHash, created_at: Date.now() };
+  const u: User = { id: rid(), email: normEmail(email), name: null, password_hash: passwordHash, created_at: Date.now() };
   db.prepare("insert into users (id, email, password_hash, created_at) values (?,?,?,?)").run(u.id, u.email, u.password_hash, u.created_at);
   return u;
 }
@@ -210,10 +216,23 @@ export const updatePassword = (userId: string, hash: string) =>
 
 /* -------------------------------- sessions -------------------------------- */
 
-export type SessionRow = { token_hash: string; user_id: string; created_at: number; expires_at: number };
+export type SessionRow = { token_hash: string; user_id: string; created_at: number; expires_at: number; user_agent: string | null; ip: string | null; last_used_at: number | null };
 
-export const insertSession = (tokenHash: string, userId: string, now: number, expiresAt: number) =>
-  db.prepare("insert into sessions (token_hash, user_id, created_at, expires_at) values (?,?,?,?)").run(tokenHash, userId, now, expiresAt);
+export const insertSession = (tokenHash: string, userId: string, now: number, expiresAt: number, userAgent: string | null = null, ip: string | null = null) =>
+  db.prepare("insert into sessions (token_hash, user_id, created_at, expires_at, user_agent, ip, last_used_at) values (?,?,?,?,?,?,?)").run(tokenHash, userId, now, expiresAt, userAgent, ip, now);
+
+export const touchSession = (tokenHash: string, now: number) =>
+  void db.prepare("update sessions set last_used_at = ? where token_hash = ?").run(now, tokenHash);
+
+export const listSessions = (userId: string) =>
+  db.prepare("select * from sessions where user_id = ? and expires_at > ? order by coalesce(last_used_at, created_at) desc").all(userId, Date.now()) as SessionRow[];
+
+/** Révoque UNE session de CETTE personne, désignée par le début de son empreinte (jamais le jeton). */
+export const deleteSessionByPrefix = (userId: string, prefix: string) =>
+  prefix.length >= 12 && db.prepare("delete from sessions where user_id = ? and token_hash like ? || '%'").run(userId, prefix).changes > 0;
+
+export const setUserName = (userId: string, name: string | null) =>
+  void db.prepare("update users set name = ? where id = ?").run(name, userId);
 
 export const findSession = (tokenHash: string) =>
   db.prepare("select * from sessions where token_hash = ?").get(tokenHash) as SessionRow | undefined;
@@ -479,4 +498,23 @@ export function orgUsage(orgId: string, days: number, now = Date.now()) {
     byProject, byMember: byMember.map((r) => ({ ...r, spendUsd: Math.round(r.spendUsd * 100) / 100 })), byProvider,
     budget: { capUsd: getOrg(orgId)?.budget_usd_month ?? null, monthSpendUsd: Math.round(spent * 100) / 100, projectedMonthUsd: Math.round((spent / elapsed) * 100) / 100 },
   };
+}
+
+/* --------------------------- organisation : nom, suppression --------------------------- */
+
+export const renameOrg = (orgId: string, name: string) =>
+  void db.prepare("update orgs set name = ? where id = ?").run(name, orgId);
+
+export const activeTaskCount = (orgId: string) =>
+  (db.prepare("select count(*) as n from tasks where org_id = ? and status in ('queued','running')").get(orgId) as { n: number }).n;
+
+/** Supprime l'organisation et TOUT ce qui lui appartient, d'un seul bloc (tout ou rien). Les comptes des personnes restent. */
+export function deleteOrgCascade(orgId: string) {
+  db.exec("begin");
+  try {
+    db.prepare("delete from events where task_id in (select id from tasks where org_id = ?)").run(orgId);
+    for (const t of ["tasks", "proxy_calls", "audit_log", "invitations", "projects", "secrets", "memberships"]) db.prepare(`delete from ${t} where org_id = ?`).run(orgId);
+    db.prepare("delete from orgs where id = ?").run(orgId);
+    db.exec("commit");
+  } catch (e) { db.exec("rollback"); throw e; }
 }

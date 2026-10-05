@@ -8,11 +8,15 @@ export const COOKIE = "atelier_session";
 
 const hash = (token: string) => createHash("sha256").update(token).digest("hex");
 
-export function startSession(userId: string, now = Date.now()): string {
+export function startSession(userId: string, now = Date.now(), device?: { userAgent?: string; ip?: string }): string {
   const token = randomBytes(32).toString("base64url");
-  db.insertSession(hash(token), userId, now, now + SESSION_TTL_MS);
+  db.insertSession(hash(token), userId, now, now + SESSION_TTL_MS, device?.userAgent?.slice(0, 200) ?? null, device?.ip?.slice(0, 64) ?? null);
   return token;
 }
+
+/** Identifiant public d'une session (début de l'empreinte) : permet de la désigner sans jamais exposer le jeton. */
+export const sessionId = (tokenHash: string) => tokenHash.slice(0, 16);
+export const currentSessionId = (token: string) => sessionId(hash(token));
 
 /** Rend l'utilisateur de la session, ou undefined (inconnue, expirée). Expiration glissante. */
 export function userFromToken(token: string | undefined, now = Date.now()) {
@@ -22,6 +26,7 @@ export function userFromToken(token: string | undefined, now = Date.now()) {
   if (!s) return undefined;
   if (s.expires_at < now) { db.deleteSession(h); return undefined; }
   if (s.expires_at - now < SESSION_TTL_MS / 2) db.extendSession(h, now + SESSION_TTL_MS);
+  if (now - (s.last_used_at ?? s.created_at) > 60_000) db.touchSession(h, now); // au plus une écriture par minute
   return db.getUserById(s.user_id);
 }
 
