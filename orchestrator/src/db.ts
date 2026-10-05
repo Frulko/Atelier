@@ -62,6 +62,11 @@ db.exec(`
     role text not null check (role in ('owner','admin','member','viewer')),
     created_by text not null, created_at integer not null, expires_at integer not null
   );
+  create table if not exists proxy_calls (
+    id integer primary key autoincrement, ts integer not null,
+    org_id text not null, task_id text not null, provider text not null, status integer not null
+  );
+  create index if not exists proxy_calls_org on proxy_calls(org_id, ts);
   create table if not exists audit_log (
     id integer primary key autoincrement, ts integer not null,
     org_id text, user_id text, action text not null,
@@ -407,3 +412,71 @@ export function queryAudit(orgId: string, f: AuditFilters = {}, maxLimit = 100):
 export const userActivity = (userId: string, limit = 50) =>
   db.prepare("select a.*, o.name as org_name from audit_log a left join orgs o on o.id = a.org_id where a.user_id = ? order by a.ts desc, a.id desc limit ?")
     .all(userId, Math.min(Math.max(limit, 1), 200)) as (AuditRow & { org_name: string | null })[];
+
+/* ------------------------------ statistiques et usage ------------------------------ */
+
+export const recordProxyCall = (orgId: string, taskId: string, provider: string, status: number) =>
+  void db.prepare("insert into proxy_calls (ts, org_id, task_id, provider, status) values (?,?,?,?,?)").run(Date.now(), orgId, taskId, provider, status);
+
+const DAY = 86400_000;
+/** Début (UTC) de la fenêtre de `days` jours finissant aujourd'hui, et fin exclusive (demain 00:00 UTC). */
+export function dayWindow(days: number, now = Date.now()) {
+  const n = Math.min(Math.max(Math.floor(days) || 30, 1), 365);
+  const end = Math.floor(now / DAY) * DAY + DAY;
+  return { days: n, from: end - n * DAY, to: end };
+}
+const dayKey = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+
+export type DayPoint = { day: string; tasks: number; done: number; failed: number; spendUsd: number; calls?: number };
+
+/** Série par jour (UTC), SANS trou : un jour sans activité vaut zéro. */
+function fillDays(w: { from: number; to: number }, rows: Record<string, Partial<DayPoint>>): DayPoint[] {
+  const out: DayPoint[] = [];
+  for (let t = w.from; t < w.to; t += DAY) {
+    const k = dayKey(t), r = rows[k] ?? {};
+    out.push({ day: k, tasks: r.tasks ?? 0, done: r.done ?? 0, failed: r.failed ?? 0, spendUsd: Math.round((r.spendUsd ?? 0) * 100) / 100, ...(r.calls !== undefined ? { calls: r.calls } : {}) });
+  }
+  return out;
+}
+
+export function orgStats(orgId: string, days: number, now = Date.now()) {
+  const w = dayWindow(days, now);
+  const byStatus = Object.fromEntries(STATUSES.map((s) => [s, 0])) as Record<Status, number>;
+  for (const r of db.prepare("select status, count(*) as n from tasks where org_id = ? and created_at >= ? and created_at < ? group by status").all(orgId, w.from, w.to) as { status: Status; n: number }[]) byStatus[r.status] = r.n;
+  const tot = db.prepare("select count(*) as n, coalesce(sum(cost),0) as spend, avg(case when started_at is not null and finished_at is not null then finished_at - started_at end) as avgMs from tasks where org_id = ? and created_at >= ? and created_at < ?").get(orgId, w.from, w.to) as { n: number; spend: number; avgMs: number | null };
+  const finished = byStatus.done + byStatus.failed;
+
+  const perDayRows: Record<string, Partial<DayPoint>> = {};
+  for (const r of db.prepare("select strftime('%Y-%m-%d', created_at/1000, 'unixepoch') as d, count(*) as n, sum(status='done') as done, sum(status='failed') as failed, coalesce(sum(cost),0) as spend from tasks where org_id = ? and created_at >= ? and created_at < ? group by d").all(orgId, w.from, w.to) as { d: string; n: number; done: number; failed: number; spend: number }[])
+    perDayRows[r.d] = { tasks: r.n, done: r.done, failed: r.failed, spendUsd: r.spend };
+
+  const byProject = db.prepare("select t.project as id, coalesce(p.name, '(projet supprimé)') as name, count(*) as tasks, sum(t.status='done') as done, sum(t.status='failed') as failed, coalesce(sum(t.cost),0) as spendUsd from tasks t left join projects p on p.id = t.project where t.org_id = ? and t.created_at >= ? and t.created_at < ? group by t.project order by tasks desc, name").all(orgId, w.from, w.to) as { id: string; name: string; tasks: number; done: number; failed: number; spendUsd: number }[];
+
+  return {
+    range: { days: w.days, from: w.from, to: w.to },
+    totals: { tasks: tot.n, byStatus, successRate: finished ? byStatus.done / finished : null, avgDurationMs: tot.avgMs === null ? null : Math.round(tot.avgMs), spendUsd: Math.round(tot.spend * 100) / 100 },
+    perDay: fillDays(w, perDayRows),
+    byProject: byProject.map((r) => ({ ...r, spendUsd: Math.round(r.spendUsd * 100) / 100 })),
+  };
+}
+
+export function orgUsage(orgId: string, days: number, now = Date.now()) {
+  const w = dayWindow(days, now);
+  const perDayRows: Record<string, Partial<DayPoint>> = {};
+  for (const r of db.prepare("select strftime('%Y-%m-%d', created_at/1000, 'unixepoch') as d, count(*) as n, coalesce(sum(cost),0) as spend from tasks where org_id = ? and created_at >= ? and created_at < ? group by d").all(orgId, w.from, w.to) as { d: string; n: number; spend: number }[])
+    perDayRows[r.d] = { tasks: r.n, spendUsd: r.spend };
+  for (const r of db.prepare("select strftime('%Y-%m-%d', ts/1000, 'unixepoch') as d, count(*) as n from proxy_calls where org_id = ? and ts >= ? and ts < ? group by d").all(orgId, w.from, w.to) as { d: string; n: number }[])
+    perDayRows[r.d] = { ...perDayRows[r.d], calls: r.n };
+  const byMember = db.prepare("select t.user_id as userId, coalesce(u.email, '(compte supprimé)') as email, count(*) as tasks, sum(t.status='done') as done, sum(t.status='failed') as failed, coalesce(sum(t.cost),0) as spendUsd from tasks t left join users u on u.id = t.user_id where t.org_id = ? and t.created_at >= ? and t.created_at < ? group by t.user_id order by spendUsd desc, tasks desc").all(orgId, w.from, w.to) as { userId: string; email: string; tasks: number; done: number; failed: number; spendUsd: number }[];
+  const byProvider = db.prepare("select provider, count(*) as calls, sum(status >= 400) as errors from proxy_calls where org_id = ? and ts >= ? and ts < ? group by provider order by calls desc").all(orgId, w.from, w.to) as { provider: string; calls: number; errors: number }[];
+  const byProject = orgStats(orgId, days, now).byProject;
+  const month = new Date(now), mStart = Date.UTC(month.getUTCFullYear(), month.getUTCMonth(), 1), mEnd = Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 1);
+  const elapsed = Math.max((now - mStart) / (mEnd - mStart), 1 / 31);
+  const spent = monthSpend(orgId, now);
+  return {
+    range: { days: w.days, from: w.from, to: w.to },
+    perDay: fillDays(w, perDayRows),
+    byProject, byMember: byMember.map((r) => ({ ...r, spendUsd: Math.round(r.spendUsd * 100) / 100 })), byProvider,
+    budget: { capUsd: getOrg(orgId)?.budget_usd_month ?? null, monthSpendUsd: Math.round(spent * 100) / 100, projectedMonthUsd: Math.round((spent / elapsed) * 100) / 100 },
+  };
+}

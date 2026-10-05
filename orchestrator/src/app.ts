@@ -1,6 +1,6 @@
 import http from "node:http";
 import { readFileSync } from "node:fs";
-import { queryAudit, userActivity, getUserById, STATUSES, queryTasks, getTaskDetail, type Status, addEvent, addMember, bus, consumeInvitation, countOrgsOf, countOwners, createOrg, createUser, deleteInvitation, findInvitation, insertInvitation, listInvitations, listMembers, removeMember, setMemberRole, createTask, getOrg, monthSpend, setOrgBudget, deleteProject, deleteSecret, getEvents, getProjectInOrg, getSecretRow, getTask, getTaskInOrg, getUserByEmail, insertProject, listProjects, listSecrets, listTasks, orgsOf, roleOf, secretInUse, updatePassword, updateProject, updateTask, type Evt, type Role, type User } from "./db.ts";
+import { orgStats, orgUsage, queryAudit, userActivity, getUserById, STATUSES, queryTasks, getTaskDetail, type Status, addEvent, addMember, bus, consumeInvitation, countOrgsOf, countOwners, createOrg, createUser, deleteInvitation, findInvitation, insertInvitation, listInvitations, listMembers, removeMember, setMemberRole, createTask, getOrg, monthSpend, setOrgBudget, deleteProject, deleteSecret, getEvents, getProjectInOrg, getSecretRow, getTask, getTaskInOrg, getUserByEmail, insertProject, listProjects, listSecrets, listTasks, orgsOf, roleOf, secretInUse, updatePassword, updateProject, updateTask, type Evt, type Role, type User } from "./db.ts";
 import { storeSecret } from "./vault.ts";
 import { audit, auditToCsv } from "./audit.ts";
 import { overBudget } from "./budget.ts";
@@ -165,12 +165,20 @@ export function createApp() {
       }
 
       // ---- ressources d'une organisation : /api/orgs/:org/...
-      const o = /^\/api\/orgs\/([0-9a-f]{16})\/(projects|tasks|secrets|members|invitations|audit)(?:\/([0-9a-f]{8,16}))?(\/events|\/cancel|\/retry)?$/.exec(url.pathname);
+      const o = /^\/api\/orgs\/([0-9a-f]{16})\/(projects|tasks|secrets|members|invitations|audit|stats|usage)(?:\/([0-9a-f]{8,16}))?(\/events|\/cancel|\/retry)?$/.exec(url.pathname);
       if (o) {
         const [, orgId, kind, itemId, sub] = o;
         const deny = (a: Access) => a === "not_found" ? json(res, 404, { error: "introuvable" }) : json(res, 403, { error: "droits insuffisants" });
         const gate = (action: Action) => access(user, orgId, action);
         const log = (action: string, target?: { type: string; id: string }, meta?: Parameters<typeof audit>[3]) => audit({ orgId, userId: user.id, ip: clientIp(req) }, action, target, meta);
+
+        // ---------------- statistiques (tableau de bord) et usage (administrateurs)
+        if ((kind === "stats" || kind === "usage") && req.method === "GET" && !itemId) {
+          const a = gate(kind === "stats" ? "task:read" : "org:budget");
+          if (typeof a === "string") return deny(a);
+          const days = Number(url.searchParams.get("days"));
+          return json(res, 200, kind === "stats" ? orgStats(orgId, days) : orgUsage(orgId, days));
+        }
 
         // ---------------- journal d'audit (lecture seule, administrateurs)
         if (kind === "audit" && req.method === "GET" && !itemId) {

@@ -70,6 +70,15 @@ test("organisation sans clé pour ce fournisseur : 403, pas de repli sur une aut
   assert.equal(calls.length, n);
 });
 
+test("chaque appel transmis est compté par organisation et par fournisseur (page d'usage)", async () => {
+  const before = db.orgUsage(orgA, 1).byProvider.find((p) => p.provider === "anthropic")?.calls ?? 0;
+  assert.equal((await anthropic(T.issueTaskToken("t0", orgA))).status, 200);
+  assert.equal(db.orgUsage(orgA, 1).byProvider.find((p) => p.provider === "anthropic")!.calls, before + 1);
+  const n = before;
+  assert.equal((await anthropic("atl_inconnu")).status, 401); // un appel refusé ne compte pas
+  assert.equal(db.orgUsage(orgA, 1).byProvider.find((p) => p.provider === "anthropic")!.calls, n + 1);
+});
+
 test("OpenAI : en-tête Authorization remplacé par la clé de l'organisation", async () => {
   const tA = T.issueTaskToken("t5", orgA);
   assert.equal((await send("/openai/v1/chat/completions", { authorization: `Bearer ${tA}` })).status, 200);

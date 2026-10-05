@@ -4,6 +4,7 @@ import { cfg } from "./config.ts";
 import { overBudget } from "./budget.ts";
 import { resolveTaskToken } from "./tokens.ts";
 import { providerKey } from "./vault.ts";
+import { recordProxyCall } from "./db.ts";
 
 /*
  * Le bac à sable n'a ni Internet ni clé d'API : il parle à ce proxy sous /<fournisseur>/… avec son JETON DE TÂCHE.
@@ -70,6 +71,7 @@ export function createProxy() {
         const v = up.headers.get(h);
         if (v) out[h] = v;
       }
+      recordProxyCall(ctx.orgId, ctx.taskId, m[1], up.status);
       res.writeHead(up.status, out);
       if (up.body) Readable.fromWeb(up.body as import("node:stream/web").ReadableStream).pipe(res);
       else res.end();
