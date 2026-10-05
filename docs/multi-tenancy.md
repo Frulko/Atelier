@@ -2,7 +2,7 @@
 
 Several **users** grouped in **organizations**. Each organization owns its projects, secrets and history. A person in one organization never sees, launches or costs anything to another.
 
-**Status:** steps U1–U4 are done (accounts, sessions, roles, per-organization tasks, encrypted secrets, projects in the database). U5–U6 are next. There is no API yet to create an organization or invite someone, so in practice only the *Default* organization exists. See the [roadmap](roadmap.md).
+**Status:** steps U1–U5 are done (accounts, sessions, roles, per-organization tasks, encrypted secrets, projects in the database, per-organization model keys with task tokens and a monthly budget). U6 is next. There is no API yet to create an organization or invite someone, so in practice only the *Default* organization exists. See the [roadmap](roadmap.md).
 
 ## Data model
 
@@ -31,6 +31,7 @@ The **organization is the isolation boundary**. Every task, project and secret c
 | Cancel anyone's task | | | ✅ | ✅ |
 | Manage projects | | | ✅ | ✅ |
 | Manage secrets (git tokens, model keys) | | | ✅ | ✅ |
+| Read and set the monthly model budget | | | ✅ | ✅ |
 | Invite / remove members *(U6)* | | | ✅ | ✅ |
 | Delete the organization, transfer ownership *(U6)* | | | | ✅ |
 
@@ -45,6 +46,9 @@ POST   /api/auth/login            { email, password }            → session coo
 POST   /api/auth/logout
 POST   /api/auth/password         { current, next }              → revokes other sessions
 GET    /api/me                                                    → user + organizations + roles
+
+GET    /api/orgs/:org                                             admin+  → name, budget, month spend
+PATCH  /api/orgs/:org             { budgetUsdMonth }              admin+  (a number ≥ 0, or null for no cap)
 
 GET    /api/orgs/:org/projects                                    viewer+
 POST   /api/orgs/:org/projects                                    admin+
@@ -76,9 +80,11 @@ On first start with an empty user table, Atelier creates the *Default* organizat
 | **U2** | Login/logout, cookie sessions, `Origin` check, rate limiting, password change; replaces Basic auth | ✅ |
 | **U3** | Organizations, roles, per-organization tasks, routes under `/api/orgs/:org`, isolation test suite | ✅ |
 | **U4** | Encrypted secrets, projects in the database, one-time import of the legacy config | ✅ |
-| **U5** | Per-task token and per-organization model keys in the proxy, monthly budget, token metering | next |
+| **U5** | One-time task token and per-organization model keys in the proxy, monthly budget | ✅ |
 | **U6** | Invitations, UI (login, organization picker, members, projects, secrets); then OIDC / GitLab and GitHub OAuth | next |
 
-### U5 in detail
+### How U5 works
 
-Today the proxy trusts any caller on the internal network and uses one global key. For several organizations each task receives a **one-time task token** instead of the dummy key; the proxy resolves `token → task → organization → encrypted key`, injects *that* key, counts tokens against the organization's budget, and invalidates the token when the task ends.
+Each task receives a **one-time task token** in place of an API key. The proxy resolves `token → task → organization`, refuses the call if the organization's monthly budget is spent (402), then injects the organization's **own** key for that provider (the most recent `provider_key` secret). An organization without a key for a provider gets a 403 — there is no fallback to another organization's key or to an environment variable. The token is revoked when the task ends.
+
+The budget is measured on the cost the agents report for each task, summed over the current UTC month. It is a coarse control: a running task can overshoot by up to its own `MAX_BUDGET_USD`. Live token metering in the proxy is not built yet.

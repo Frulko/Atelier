@@ -39,7 +39,8 @@ This is covered by `isolation.test.ts` and `resources.test.ts`, which start a re
 
 - **`.git` lives outside the mounted directory.** Otherwise the agent could write a `.git/config` (`core.fsmonitor`, `core.sshCommand`) or a hook that the orchestrator's git — which carries the token — would execute. The repository is cloned with `--separate-git-dir`, git is always called with explicit `--git-dir/--work-tree`, `core.hooksPath=/dev/null` and `core.fsmonitor=false`, and any `.git` the agent creates is removed.
 - **The orchestrator runs the checks itself**, without network and outside the agent. The agent's claim that "the tests pass" is never trusted.
-- **Model keys stay in a proxy.** The sandbox receives a dummy key; the proxy allows only generation routes and adds the real one.
+- **Model keys stay in a proxy.** The sandbox receives a **one-time task token** instead of a key. The proxy resolves token → task → organization, checks the organization's budget, allows only generation routes and injects *that organization's* key. It never falls back to another organization's key or to an environment variable, and the token is revoked when the task ends.
+- **The Docker client runs with a minimal environment**, so none of the orchestrator's own secrets can be forwarded into a sandbox.
 - **Repositories must be `https://` URLs without embedded credentials**, optionally restricted to an allowlist of hosts (`ATELIER_GIT_HOSTS`). Local paths and exotic schemes would let a user read files from the host. Branch names cannot start with `-` or contain `..`, so they cannot be mistaken for git options.
 - **Protected paths.** If the diff touches a project's `protectedPaths` (migrations, CI config…), the MR/PR is titled `[REVIEW REQUIRED]` and says so.
 - **CSRF.** Session cookies are `HttpOnly; SameSite=Strict`, and state-changing requests are rejected when `Origin` does not match the host.
@@ -51,12 +52,13 @@ This is covered by `isolation.test.ts` and `resources.test.ts`, which start a re
 Read these before exposing the service.
 
 - **The Docker socket is mounted into the orchestrator, which is equivalent to root on the host.** Acceptable for a trusted team on a dedicated machine; **not acceptable for a multi-tenant SaaS** with mutually untrusting customers. A filtering socket proxy helps; microVM isolation (gVisor/Firecracker) fixes it properly. See the [roadmap](roadmap.md).
-- **Model API keys are still global** (environment variables) and shared by every organization, until step U5 moves them to per-organization secrets. The proxy cannot yet tell which organization a call is for, nor meter spend.
+- **Spend is controlled coarsely.** The monthly budget counts the cost agents *report* per task, so one running task can overshoot it by up to `MAX_BUDGET_USD`. Tokens are not metered live in the proxy yet.
 - **No invitations and no organization-creation API yet** (step U6): in practice only the default organization exists. Organizations, projects and secrets can be managed through the API; the web UI does not expose them yet.
 - **Rate limiting is in memory**: it resets on restart and does not span several instances.
 - **No egress filtering of the orchestrator.** A user who may create projects can make it clone from any allowed `https` host; set `ATELIER_GIT_HOSTS` to restrict it.
 - **The sandbox has no Internet**, so the agent cannot `npm install`, and its image contains only Node. Projects that need dependencies need a prepared image or a registry proxy (not built).
-- **Spend is only bounded per task** (`MAX_BUDGET_USD`, turn and time limits). Cap the keys in the provider's console too.
+- **Cap the keys in the provider's console too.** Per-task limits (`MAX_BUDGET_USD`, turns, time) and the monthly budget are Atelier's own and rely on what the agent reports.
+- **Task tokens live in memory**, so only one orchestrator process can serve the proxy.
 - **One task at a time.**
 - **The real Claude agent and real GitLab/GitHub calls have not been exercised yet**; they are implemented but verified only through the fake agent and local git repositories.
 - Serve it behind **HTTPS**. Set `TRUST_PROXY=1` behind a reverse proxy so cookies are marked `Secure` and client IPs are read correctly.

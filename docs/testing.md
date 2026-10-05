@@ -22,6 +22,8 @@ Three commands. All three must be green before a commit.
 | Projects API: hostile repositories refused, duplicate slug, delete rules | `resources.test.ts`, `projects.test.ts` |
 | Vault: round trip, tampering, ciphertext moved to another organization or secret, master key file | `vault.test.ts` |
 | One-time import of the legacy configuration | `legacy-import.test.ts` |
+| Model proxy against a fake provider: missing/wrong/revoked token, each organization's own key, no global fallback, 402 over budget, allowed routes only | `proxy.test.ts` |
+| Budget: month boundaries, per-organization spend, cap semantics, API roles, task creation refused when over budget | `budget.test.ts` |
 | 401 without a session, login, CSRF (403), password change revoking other devices, logout | `smoke.sh` |
 | Clone → sandbox → check → **fix loop** → commit → push → cleanup, with several projects | `smoke.sh` |
 

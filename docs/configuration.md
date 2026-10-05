@@ -9,7 +9,6 @@ Atelier is configured through environment variables (see [`.env.example`](../.en
 | Variable | Purpose |
 |---|---|
 | `ATELIER_PASSWORD` | **Initial** password of the owner account created on first start. Change it in the UI afterwards |
-| at least one of `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY` | Model provider keys. They stay in the orchestrator and are never visible to the sandbox |
 
 ### Accounts and security
 
@@ -39,7 +38,7 @@ Atelier is configured through environment variables (see [`.env.example`](../.en
 
 ### First-start import only
 
-`PROJECTS_JSON` (or `/data/projects.json`) and `GIT_TOKEN*` are read **once**, on the first start, to populate the Default organization; see [Multi-tenancy](multi-tenancy.md#upgrading-from-the-single-user-version). `*_API_KEY` variables are also copied into the vault but the proxy still reads them from the environment until step U5.
+`PROJECTS_JSON` (or `/data/projects.json`), `GIT_TOKEN*` and `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `OPENROUTER_API_KEY` are read **once**, on the first start, to populate the Default organization; see [Multi-tenancy](multi-tenancy.md#upgrading-from-the-single-user-version). **After that the proxy never reads them**: model keys are per-organization secrets. You can start with none and add them through the API.
 
 ## Projects
 
@@ -79,6 +78,16 @@ Token scopes: GitLab `api` + `write_repository`; GitHub `repo`.
 
 ## Model providers
 
-The proxy routes by prefix (`/anthropic`, `/openai`, `/openrouter`) and injects the matching key. Adding a provider is one entry in `PROVIDERS` in [`orchestrator/src/proxy.ts`](../orchestrator/src/proxy.ts) plus its key in `config.ts`.
+Each organization stores its own key per provider as a secret (`kind: provider_key`, `provider: anthropic | openai | openrouter`); the most recent one is used.
+
+```bash
+curl -b jar -H 'content-type: application/json' $URL/api/orgs/$ORG/secrets \
+  -d '{"kind":"provider_key","provider":"anthropic","label":"Team key","value":"sk-ant-…"}'
+
+# monthly budget in USD, or null for no cap
+curl -b jar -X PATCH -H 'content-type: application/json' $URL/api/orgs/$ORG -d '{"budgetUsdMonth":50}'
+```
+
+The proxy routes by prefix (`/anthropic`, `/openai`, `/openrouter`), identifies the organization from the task token and injects that organization's key. Adding a provider is one entry in `PROVIDERS` in [`orchestrator/src/proxy.ts`](../orchestrator/src/proxy.ts) plus its name in the secret validation in `app.ts` (it reads `PROVIDERS`).
 
 On the agent side, a project's `engine` selects what runs in the sandbox. **Only `claude` (the Claude Agent SDK) is implemented.** To use other models, add an engine to [`sandbox/runner.mjs`](../sandbox/runner.mjs) — for example OpenCode or Codex CLI, which speak to several providers. An engine only has to emit the same JSON-lines events.

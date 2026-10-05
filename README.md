@@ -34,9 +34,9 @@ To run it for real (your own projects, a real model, a real forge), see **[Deplo
 |---|---|
 | Pipeline: clone → sandboxed agent → check → fix loop → branch → MR/PR | ✅ working, tested end to end with the fake agent |
 | Accounts, sessions, organizations, roles, per-organization isolation | ✅ working, covered by an isolation test suite |
-| Encrypted secrets, projects in the database | ✅ working |
+| Encrypted secrets, projects in the database, per-organization model keys and monthly budget | ✅ working |
 | **Real Claude agent**, **real GitLab MR**, **real GitHub PR** | ⚠️ implemented, **not yet exercised** (no key or forge in the dev environment) |
-| Invitations, organization/project/secret management UI, per-organization model keys | 🚧 next ([roadmap](docs/roadmap.md)) |
+| Invitations and a management UI for organizations, projects and secrets | 🚧 next ([roadmap](docs/roadmap.md)) |
 
 Read **[Security → known limitations](docs/security.md#known-limitations)** before exposing it to anyone.
 

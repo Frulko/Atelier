@@ -10,7 +10,7 @@ Atelier is one small service, the **orchestrator**, plus a **sandbox image** tha
 |---|---|---|
 | **Orchestrator** | `orchestrator/` — Node 24, TypeScript run directly (no build step), SQLite, no runtime dependency | HTTP API and chat UI, accounts and sessions, organizations and roles, task queue, git operations, sandbox lifecycle |
 | **Vault** | `orchestrator/src/vault.ts` | Encrypts git tokens and model API keys at rest (AES-256-GCM) |
-| **Model proxy** | `orchestrator/src/proxy.ts` | The only route out of the sandbox. Allows generation endpoints only and injects the real API key |
+| **Model proxy** | `orchestrator/src/proxy.ts` | The only route out of the sandbox. Identifies the organization from a one-time task token, enforces its budget, allows generation endpoints only and injects that organization's API key |
 | **Sandbox** | `sandbox/` — Node 24 slim + the Claude Agent SDK | One disposable container per task. Runs the agent on a copy of the project |
 | **Chat UI** | `orchestrator/public/index.html` | One static page: login, project picker, live task log |
 
@@ -53,7 +53,9 @@ atelier/
 │   ├── src/pipeline.ts             clone → agent → check → push → MR/PR
 │   ├── src/git.ts                  hardened git, MR (GitLab) and PR (GitHub) creation
 │   ├── src/sandbox.ts              runs the agent and the check in Docker
-│   ├── src/proxy.ts                model-provider proxy
+│   ├── src/proxy.ts                model-provider proxy (task token → organization → key)
+│   ├── src/tokens.ts               one-time task tokens
+│   ├── src/budget.ts               monthly budget check
 │   ├── src/db.ts                   SQLite schema and queries
 │   ├── src/bootstrap.ts            first owner account, one-time import of the legacy config
 │   ├── src/config.ts               environment variables
