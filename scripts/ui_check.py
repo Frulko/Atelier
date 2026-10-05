@@ -88,6 +88,15 @@ with sync_playwright() as p:
     expect(admin.get_by_text("NOTES.md").first).to_be_visible()                         # files changed
     shot(admin, "03-task-detail")
     first_task = admin.url
+    nav(admin, "Conversations")                                                          # the task is also a conversation
+    admin.get_by_role("link").filter(has_text=f"ajoute une note depuis l'interface {RUN}").click()
+    expect(admin.get_by_test_id("turn-1")).to_be_visible()
+    admin.get_by_label("Demander un ajustement").fill(f"ajoute aussi les horaires {RUN}")
+    admin.get_by_label("Demander un ajustement").press("Enter")                          # a follow-up = a new agent turn, same branch
+    expect(admin.get_by_text("Ajustement 1")).to_be_visible()
+    expect(admin.get_by_text(re.compile("mise à jour")).first).to_be_visible(timeout=90000)
+    shot(admin, "03b-task-conversation")
+    admin.goto(first_task)
     admin.get_by_role("button", name="Relancer").click()                                 # retry = a NEW task
     admin.wait_for_url(lambda u: "/tasks/" in u and u != first_task)
 

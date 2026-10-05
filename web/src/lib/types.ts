@@ -7,10 +7,10 @@ export interface Me { user: { id: string; email: string; name: string | null }; 
 export interface Task {
   id: string; org_id: string; user_id: string | null; project: string; project_name: string | null; user_email: string | null;
   prompt: string; status: Status; branch: string | null; mr_url: string | null; cost: number;
-  created_at: number; started_at: number | null; finished_at: number | null; files_json: string | null; flagged: number;
+  created_at: number; started_at: number | null; finished_at: number | null; files_json: string | null; flagged: number; turn: number; followup: string | null;
 }
 export interface TaskPage { items: Task[]; total: number; limit: number; offset: number }
-export interface TaskEvent { id: number; task_id: string; ts: number; type: string; text: string }
+export interface TaskEvent { id: number; task_id: string; ts: number; type: string; text: string; turn?: number }
 export interface TaskFilters { status?: string; project?: string; user?: string; q?: string; from?: number; to?: number }
 
 export interface Project {

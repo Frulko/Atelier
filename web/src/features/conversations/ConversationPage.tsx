@@ -20,6 +20,7 @@ import { api } from "../../lib/api";
 import { conversationQuery, invalidateOrg } from "../../lib/queries";
 import type { Conversation } from "../../lib/types";
 import { useOrg } from "../../lib/useOrg";
+import { TaskThread } from "./TaskThread";
 
 const route = getRouteApi("/o/$orgId/conversations/$conversationId");
 
@@ -36,7 +37,7 @@ export function ConversationPage() {
         actions={c.mode === "chat" ? <DeleteButton id={c.id} /> : task ? <Link to="/o/$orgId/tasks/$taskId" params={{ orgId, taskId: task.id }}><Button>Voir la tâche</Button></Link> : undefined} />
       {c.mode === "chat"
         ? <ChatWindow key={c.id} conversation={c} initial={messages} />
-        : <Card className="grid gap-3 p-4">{messages.map((m) => <div key={m.id} className="rounded-lg bg-line/40 p-3 text-sm">{m.parts.map((p) => (p.type === "text" ? p.text : "")).join("")}</div>)}</Card>}
+        : <TaskThread detail={q.data} />}
     </>
   );
 }
