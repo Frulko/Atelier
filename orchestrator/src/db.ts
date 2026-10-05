@@ -62,6 +62,13 @@ db.exec(`
     role text not null check (role in ('owner','admin','member','viewer')),
     created_by text not null, created_at integer not null, expires_at integer not null
   );
+  create table if not exists audit_log (
+    id integer primary key autoincrement, ts integer not null,
+    org_id text, user_id text, action text not null,
+    target_type text, target_id text, meta text, ip text
+  );
+  create index if not exists audit_org on audit_log(org_id, ts);
+  create index if not exists audit_user on audit_log(user_id, ts);
   create table if not exists sessions (
     token_hash text primary key, user_id text not null references users(id) on delete cascade,
     created_at integer not null, expires_at integer not null
@@ -360,3 +367,43 @@ export const countOrgsOf = (userId: string) =>
 /** Pour les tests : date de création arbitraire (les filtres par période en ont besoin). */
 export const updateTaskCreatedAtForTest = (id: string, at: number) =>
   void db.prepare("update tasks set created_at = ? where id = ?").run(at, id);
+
+/* ----------------------------------- audit ----------------------------------- */
+
+export type AuditRow = {
+  id: number; ts: number; org_id: string | null; user_id: string | null; action: string;
+  target_type: string | null; target_id: string | null; meta: string | null; ip: string | null; user_email?: string | null;
+};
+
+export const insertAudit = (r: Omit<AuditRow, "id" | "user_email">) =>
+  void db.prepare("insert into audit_log (ts, org_id, user_id, action, target_type, target_id, meta, ip) values (?,?,?,?,?,?,?,?)")
+    .run(r.ts, r.org_id, r.user_id, r.action, r.target_type, r.target_id, r.meta, r.ip);
+
+export type AuditFilters = { action?: string; user?: string; q?: string; from?: number; to?: number; limit?: number; offset?: number };
+
+/** Journal d'UNE organisation. `action` : valeur exacte, ou préfixe terminé par un point (« member. »). */
+export function queryAudit(orgId: string, f: AuditFilters = {}, maxLimit = 100): { items: AuditRow[]; total: number; limit: number; offset: number } {
+  const where = ["a.org_id = ?"]; const args: (string | number)[] = [orgId];
+  if (f.action) {
+    if (f.action.endsWith(".")) { where.push("a.action like ? escape '\\'"); args.push(`${f.action.replace(/[\\%_]/g, "\\$&")}%`); }
+    else { where.push("a.action = ?"); args.push(f.action); }
+  }
+  if (f.user) { where.push("a.user_id = ?"); args.push(f.user); }
+  if (f.q) {
+    const like = `%${f.q.replace(/[\\%_]/g, "\\$&")}%`;
+    where.push("(a.action like ? escape '\\' or a.meta like ? escape '\\' or u.email like ? escape '\\')"); args.push(like, like, like);
+  }
+  if (f.from != null) { where.push("a.ts >= ?"); args.push(f.from); }
+  if (f.to != null) { where.push("a.ts < ?"); args.push(f.to); }
+  const limit = Math.min(Math.max(f.limit ?? 50, 1), maxLimit), offset = Math.max(f.offset ?? 0, 0);
+  const from = "from audit_log a left join users u on u.id = a.user_id";
+  const w = where.join(" and ");
+  const total = (db.prepare(`select count(*) as n ${from} where ${w}`).get(...args) as { n: number }).n;
+  const items = db.prepare(`select a.*, u.email as user_email ${from} where ${w} order by a.ts desc, a.id desc limit ? offset ?`).all(...args, limit, offset) as AuditRow[];
+  return { items, total, limit, offset };
+}
+
+/** Ce qu'une personne a fait elle-même, dans toutes ses organisations : pour la page « Mon compte ». */
+export const userActivity = (userId: string, limit = 50) =>
+  db.prepare("select a.*, o.name as org_name from audit_log a left join orgs o on o.id = a.org_id where a.user_id = ? order by a.ts desc, a.id desc limit ?")
+    .all(userId, Math.min(Math.max(limit, 1), 200)) as (AuditRow & { org_name: string | null })[];

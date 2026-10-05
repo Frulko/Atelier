@@ -1,7 +1,8 @@
 import http from "node:http";
 import { readFileSync } from "node:fs";
-import { STATUSES, queryTasks, getTaskDetail, type Status, addEvent, addMember, bus, consumeInvitation, countOrgsOf, countOwners, createOrg, createUser, deleteInvitation, findInvitation, insertInvitation, listInvitations, listMembers, removeMember, setMemberRole, createTask, getOrg, monthSpend, setOrgBudget, deleteProject, deleteSecret, getEvents, getProjectInOrg, getSecretRow, getTask, getTaskInOrg, getUserByEmail, insertProject, listProjects, listSecrets, listTasks, orgsOf, roleOf, secretInUse, updatePassword, updateProject, updateTask, type Evt, type Role, type User } from "./db.ts";
+import { queryAudit, userActivity, getUserById, STATUSES, queryTasks, getTaskDetail, type Status, addEvent, addMember, bus, consumeInvitation, countOrgsOf, countOwners, createOrg, createUser, deleteInvitation, findInvitation, insertInvitation, listInvitations, listMembers, removeMember, setMemberRole, createTask, getOrg, monthSpend, setOrgBudget, deleteProject, deleteSecret, getEvents, getProjectInOrg, getSecretRow, getTask, getTaskInOrg, getUserByEmail, insertProject, listProjects, listSecrets, listTasks, orgsOf, roleOf, secretInUse, updatePassword, updateProject, updateTask, type Evt, type Role, type User } from "./db.ts";
 import { storeSecret } from "./vault.ts";
+import { audit, auditToCsv } from "./audit.ts";
 import { overBudget } from "./budget.ts";
 import { PROVIDERS } from "./proxy.ts";
 import { rowToJson, validateProject } from "./projects.ts";
@@ -78,8 +79,9 @@ export function createApp() {
         const user = getUserByEmail(email);
         // Toujours un calcul de hash, même si le compte n'existe pas : le temps ne révèle pas l'existence du compte.
         const ok = await verifyPassword(password, user?.password_hash ?? DUMMY_HASH);
-        if (!user || !ok) { keys.forEach((k) => limiter.fail(k)); return json(res, 401, { error: "e-mail ou mot de passe incorrect" }); }
+        if (!user || !ok) { keys.forEach((k) => limiter.fail(k)); if (user) audit({ userId: user.id, ip: clientIp(req) }, "auth.login_failed"); return json(res, 401, { error: "e-mail ou mot de passe incorrect" }); }
         keys.forEach((k) => limiter.reset(k));
+        audit({ userId: user.id, ip: clientIp(req) }, "auth.login");
         return json(res, 200, { ok: true }, { "set-cookie": cookieHeader(startSession(user.id), isSecure(req)) });
       }
 
@@ -94,6 +96,7 @@ export function createApp() {
           if (current.email !== inv.email) return json(res, 403, { error: "cette invitation est destinée à une autre adresse e-mail" });
           if (!roleOf(inv.org_id, current.id)) addMember(inv.org_id, current.id, inv.role);
           consumeInvitation(inv.token_hash);
+          audit({ orgId: inv.org_id, userId: current.id, ip: clientIp(req) }, "invitation.accept", { type: "invitation", id: inv.id }, { email: inv.email, role: inv.role });
           return json(res, 200, { ok: true, orgId: inv.org_id });
         }
         if (getUserByEmail(inv.email)) return json(res, 409, { error: "un compte existe déjà pour cette adresse : connecte-toi, puis rouvre le lien" });
@@ -106,6 +109,7 @@ export function createApp() {
           const u = createUser(inv.email, hash);
           addMember(inv.org_id, u.id, inv.role);
           consumeInvitation(inv.token_hash);
+          audit({ orgId: inv.org_id, userId: u.id, ip: clientIp(req) }, "invitation.accept", { type: "invitation", id: inv.id }, { email: inv.email, role: inv.role, newAccount: true });
           return json(res, 201, { ok: true, orgId: inv.org_id }, { "set-cookie": cookieHeader(startSession(u.id), isSecure(req)) });
         } catch (e) {
           if (!/UNIQUE/.test(String(e))) throw e;
@@ -120,14 +124,18 @@ export function createApp() {
 
       if (req.method === "POST" && url.pathname === "/api/auth/logout") {
         endSession(token);
+        audit({ userId: user.id, ip: clientIp(req) }, "auth.logout");
         return json(res, 200, { ok: true }, { "set-cookie": cookieHeader("", isSecure(req), 0) });
       }
+      if (req.method === "GET" && url.pathname === "/api/me/activity") return json(res, 200, userActivity(user.id).map((a) => ({ id: a.id, ts: a.ts, action: a.action, orgId: a.org_id, orgName: a.org_name, targetType: a.target_type, targetId: a.target_id, meta: a.meta ? JSON.parse(a.meta) : null, ip: a.ip })));
       if (req.method === "GET" && url.pathname === "/api/me") return json(res, 200, { user: { id: user.id, email: user.email }, orgs: orgsOf(user.id) });
       if (req.method === "POST" && url.pathname === "/api/orgs") {
         const { name } = await body(req);
         if (typeof name !== "string" || !name.trim() || name.length > 80) return json(res, 400, { error: "nom invalide" });
         if (countOrgsOf(user.id) >= 10) return json(res, 409, { error: "limite de 10 organisations atteinte" });
-        return json(res, 201, { id: createOrg(name.trim(), user.id), name: name.trim(), role: "owner" });
+        const newOrg = createOrg(name.trim(), user.id);
+        audit({ orgId: newOrg, userId: user.id, ip: clientIp(req) }, "org.create", { type: "org", id: newOrg }, { name: name.trim() });
+        return json(res, 201, { id: newOrg, name: name.trim(), role: "owner" });
       }
       if (req.method === "POST" && url.pathname === "/api/auth/password") {
         const { current, next } = await body(req);
@@ -137,6 +145,7 @@ export function createApp() {
         if (problem) return json(res, 400, { error: problem });
         updatePassword(user.id, await hashPassword(next));
         endOtherSessions(user.id, token); // les autres appareils sont déconnectés
+        audit({ userId: user.id, ip: clientIp(req) }, "auth.password_change");
         return json(res, 200, { ok: true });
       }
 
@@ -150,16 +159,36 @@ export function createApp() {
           const ok = budgetUsdMonth === null || (typeof budgetUsdMonth === "number" && Number.isFinite(budgetUsdMonth) && budgetUsdMonth >= 0 && budgetUsdMonth <= 1e6);
           if (!ok) return json(res, 400, { error: "budget invalide (nombre ≥ 0, ou null pour illimité)" });
           setOrgBudget(og[1], budgetUsdMonth);
+          audit({ orgId: og[1], userId: user.id, ip: clientIp(req) }, "org.budget_set", { type: "org", id: og[1] }, { budgetUsdMonth });
         }
         return json(res, 200, orgJson(og[1]));
       }
 
       // ---- ressources d'une organisation : /api/orgs/:org/...
-      const o = /^\/api\/orgs\/([0-9a-f]{16})\/(projects|tasks|secrets|members|invitations)(?:\/([0-9a-f]{8,16}))?(\/events|\/cancel|\/retry)?$/.exec(url.pathname);
+      const o = /^\/api\/orgs\/([0-9a-f]{16})\/(projects|tasks|secrets|members|invitations|audit)(?:\/([0-9a-f]{8,16}))?(\/events|\/cancel|\/retry)?$/.exec(url.pathname);
       if (o) {
         const [, orgId, kind, itemId, sub] = o;
         const deny = (a: Access) => a === "not_found" ? json(res, 404, { error: "introuvable" }) : json(res, 403, { error: "droits insuffisants" });
         const gate = (action: Action) => access(user, orgId, action);
+        const log = (action: string, target?: { type: string; id: string }, meta?: Parameters<typeof audit>[3]) => audit({ orgId, userId: user.id, ip: clientIp(req) }, action, target, meta);
+
+        // ---------------- journal d'audit (lecture seule, administrateurs)
+        if (kind === "audit" && req.method === "GET" && !itemId) {
+          const a = gate("audit:read");
+          if (typeof a === "string") return deny(a);
+          const sp = url.searchParams;
+          const num = (k: string) => { const v = sp.get(k); return v !== null && v !== "" && Number.isFinite(Number(v)) ? Number(v) : undefined; };
+          const csv = sp.get("format") === "csv";
+          const page = queryAudit(orgId, {
+            action: (sp.get("action") ?? "").slice(0, 50) || undefined, user: sp.get("user") || undefined, q: (sp.get("q") ?? "").slice(0, 100).trim() || undefined,
+            from: num("from"), to: num("to"), limit: csv ? 10000 : num("limit"), offset: csv ? 0 : num("offset"),
+          }, csv ? 10000 : 100);
+          if (csv) {
+            log("audit.export", undefined, { rows: page.items.length });
+            return void res.writeHead(200, { "content-type": "text/csv; charset=utf-8", "content-disposition": `attachment; filename="audit-${orgId}.csv"` }).end(auditToCsv(page.items));
+          }
+          return json(res, 200, { ...page, items: page.items.map((r) => ({ id: r.id, ts: r.ts, action: r.action, userId: r.user_id, userEmail: r.user_email, targetType: r.target_type, targetId: r.target_id, meta: r.meta ? JSON.parse(r.meta) : null, ip: r.ip })) });
+        }
 
         // ---------------- membres
         if (kind === "members") {
@@ -176,12 +205,14 @@ export function createApp() {
               if (!canTouch(a.role, current) || !canAssign(a.role, role)) return json(res, 403, { error: "droits insuffisants pour ce rôle" });
               if (lastOwner && role !== "owner") return json(res, 409, { error: "l'organisation doit garder au moins un propriétaire" });
               setMemberRole(orgId, itemId, role);
+              log("member.role", { type: "user", id: itemId }, { email: getUserById(itemId)?.email, from: current, to: role });
               return json(res, 200, { userId: itemId, role });
             }
             if (req.method === "DELETE") {
               if (!canTouch(a.role, current)) return json(res, 403, { error: "droits insuffisants pour ce rôle" });
               if (lastOwner) return json(res, 409, { error: "l'organisation doit garder au moins un propriétaire" });
               removeMember(orgId, itemId);
+              log("member.remove", { type: "user", id: itemId }, { email: getUserById(itemId)?.email, role: current });
               return json(res, 200, { ok: true });
             }
           }
@@ -202,10 +233,13 @@ export function createApp() {
             const token = newInviteToken();
             const expiresAt = Date.now() + INVITE_TTL_MS;
             const id = insertInvitation(orgId, email, role, user.id, hashInviteToken(token), expiresAt);
+            log("invitation.create", { type: "invitation", id }, { email: email.trim().toLowerCase(), role }); // jamais le jeton
             return json(res, 201, { id, email: email.trim().toLowerCase(), role, expiresAt, token });
           }
           if (req.method === "DELETE" && itemId && !sub) {
-            return deleteInvitation(itemId, orgId) ? json(res, 200, { ok: true }) : json(res, 404, { error: "introuvable" });
+            if (!deleteInvitation(itemId, orgId)) return json(res, 404, { error: "introuvable" });
+            log("invitation.revoke", { type: "invitation", id: itemId });
+            return json(res, 200, { ok: true });
           }
         }
 
@@ -225,6 +259,7 @@ export function createApp() {
             if (f.gitSecretId && getSecretRow(f.gitSecretId, orgId)?.kind !== "git_token") return json(res, 400, { error: "secret git introuvable" });
             try {
               const id = insertProject({ org_id: orgId, slug: f.slug, name: f.name, repo: f.repo, branch: f.branch, forge: f.forge, check_cmd: f.check, engine: f.engine, protected_paths: JSON.stringify(f.protectedPaths), git_secret_id: f.gitSecretId });
+              log("project.create", { type: "project", id }, { slug: f.slug, name: f.name });
               return json(res, 201, rowToJson(getProjectInOrg(id, orgId)!));
             } catch (e) {
               if (!/UNIQUE/.test(String(e))) throw e;
@@ -252,9 +287,15 @@ export function createApp() {
                 if (!/UNIQUE/.test(String(e))) throw e;
                 return json(res, 409, { error: "ce slug existe déjà" });
               }
+              log("project.update", { type: "project", id: itemId }, { fields: Object.keys(f) }); // noms de l'API, pas ceux des colonnes
               return json(res, 200, rowToJson(getProjectInOrg(itemId, orgId)!));
             }
-            if (req.method === "DELETE") { deleteProject(itemId, orgId); return json(res, 200, { ok: true }); }
+            if (req.method === "DELETE") {
+              const gone = getProjectInOrg(itemId, orgId)!;
+              deleteProject(itemId, orgId);
+              log("project.delete", { type: "project", id: itemId }, { slug: gone.slug, name: gone.name });
+              return json(res, 200, { ok: true });
+            }
           }
         }
 
@@ -269,12 +310,16 @@ export function createApp() {
             if (k === "provider_key" && !Object.keys(PROVIDERS).includes(provider)) return json(res, 400, { error: "fournisseur invalide" });
             if (typeof label !== "string" || !label.trim() || label.length > 80) return json(res, 400, { error: "libellé invalide" });
             if (typeof value !== "string" || !value.trim() || value.length > 500) return json(res, 400, { error: "valeur invalide" });
-            return json(res, 201, storeSecret(orgId, k, k === "provider_key" ? provider : null, label.trim(), value.trim()));
+            const stored = storeSecret(orgId, k, k === "provider_key" ? provider : null, label.trim(), value.trim());
+            log("secret.create", { type: "secret", id: stored.id }, { kind: k, provider: stored.provider, label: stored.label }); // jamais la valeur
+            return json(res, 201, stored);
           }
           if (req.method === "DELETE" && itemId && !sub) {
             if (!getSecretRow(itemId, orgId)) return json(res, 404, { error: "introuvable" });
             if (secretInUse(itemId)) return json(res, 409, { error: "secret utilisé par un projet" });
+            const gone = getSecretRow(itemId, orgId)!;
             deleteSecret(itemId, orgId);
+            log("secret.delete", { type: "secret", id: itemId }, { kind: gone.kind, provider: gone.provider, label: gone.label });
             return json(res, 200, { ok: true });
           }
         }
@@ -303,6 +348,7 @@ export function createApp() {
             const id = newId();
             createTask(id, orgId, user.id, row.id, prompt.trim());
             addEvent(id, "step", "Demande reçue, en file d'attente.");
+            log("task.create", { type: "task", id }, { project: row.name });
             enqueue(id);
             return json(res, 201, getTaskDetail(id, orgId));
           }
@@ -318,6 +364,7 @@ export function createApp() {
             const c = gate(task.user_id === user.id ? "task:cancel_own" : "task:cancel_any");
             if (typeof c === "string") return deny(c);
             cancel(task.id);
+            log("task.cancel", { type: "task", id: task.id });
             if (task.status === "queued") updateTask(task.id, { status: "cancelled" });
             return json(res, 200, { ok: true });
           }
@@ -331,6 +378,7 @@ export function createApp() {
             const nid = newId();
             createTask(nid, orgId, user.id, row.id, task.prompt);
             addEvent(nid, "step", `Relance de la tâche ${task.id}. En file d'attente.`);
+            log("task.retry", { type: "task", id: nid }, { from: task.id, project: row.name });
             enqueue(nid);
             return json(res, 201, getTaskDetail(nid, orgId));
           }
