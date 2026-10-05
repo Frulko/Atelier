@@ -167,6 +167,18 @@ with sync_playwright() as p:
     admin.get_by_label("Ton message").press("Enter")
     expect(admin.get_by_text("Et pour les horaires ?").first).to_be_visible()
     expect(admin.get_by_text("Réponse factice")).to_have_count(2)
+    expect(admin.get_by_role("button", name="Copier")).to_be_visible()
+    with tempfile.NamedTemporaryFile("w", suffix=".txt", prefix=f"horaires-{RUN}-", delete=False, encoding="utf-8") as f:
+        f.write("Lundi-vendredi 7h-19h")
+        horaires = f.name
+    admin.locator('input[type="file"]').set_input_files(horaires)                            # attach a file
+    expect(admin.get_by_text(f"horaires-{RUN}").first).to_be_visible()
+    admin.get_by_label("Ton message").fill("Montre le code du lien")
+    admin.get_by_label("Ton message").press("Enter")
+    expect(admin.get_by_text("Réponse factice")).to_have_count(3)
+    expect(admin.locator("pre").first).to_be_visible()                                       # the fenced code block is rendered
+    expect(admin.get_by_text(f"horaires-{RUN}").first).to_be_visible()                      # the sent message keeps its chip
+    os.unlink(horaires)
     shot(admin, "05c-conversation")
     nav(admin, "Conversations")
     expect(admin.get_by_text(f"Quel ton pour la page Contact {RUN}").first).to_be_visible()

@@ -193,3 +193,43 @@ test("réglage du fournisseur et du modèle : administrateur seulement, valeurs 
   await call(cAd, "PATCH", A, { chatProvider: null, chatModel: null });   // retour aux valeurs par défaut
   assert.equal(((await (await call(cAd, "GET", A)).json()) as { chat: { provider: string } }).chat.provider, "anthropic");
 });
+
+const dataUrl = (type: string, bytes: Buffer | string) => `data:${type};base64,${Buffer.from(bytes).toString("base64")}`;
+const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47]), Buffer.alloc(20)]);
+const file = (filename: string, mediaType: string, bytes: Buffer | string) => ({ type: "file", filename, mediaType, url: dataUrl(mediaType, bytes) });
+
+test("pièces jointes : un fichier texte devient du texte, une image reste un fichier ; question facultative", async () => {
+  const id = await newChat();
+  const r = await send(cM, id, [{ id: "u", role: "user", parts: [{ type: "text", text: "regarde" }, file("../../etc/notes.md", "text/markdown", "# Horaires\nlun-ven 7h-19h"), file("logo.png", "image/png", PNG)] }]);
+  assert.equal(r.status, 200);
+  const s = await readStream(r);
+  assert.match(s.text, /Pièces jointes reçues : 1/);                 // l'image seule ; le texte est dans la question
+  assert.match(s.text, /Horaires/);
+  const parts = JSON.parse(db.getMessages(id)[0]!.parts) as { type: string; text?: string; filename?: string }[];
+  assert.deepEqual(parts.map((p) => p.type), ["text", "text", "file"]);
+  assert.match(parts[1]!.text!, /Fichier joint « notes\.md »/);       // le chemin du nom est retiré
+  const onlyFile = await newChat();                                   // sans texte : permis, titre = nom du fichier
+  assert.equal((await send(cM, onlyFile, [{ id: "u", role: "user", parts: [file("plan.png", "image/png", PNG)] }])).status, 200);
+});
+
+test("pièces jointes : type annoncé menteur, trop gros, trop nombreux, binaire déguisé : refusés sans rien enregistrer", async () => {
+  const id = await newChat();
+  const bad = [
+    [file("faux.png", "image/png", "pas une image")],
+    [file("gros.png", "image/png", Buffer.concat([PNG, Buffer.alloc(4_100_000)]))],
+    Array.from({ length: 5 }, (_, i) => file(`f${i}.txt`, "text/plain", "x")),
+    [file("prog.exe", "application/x-msdownload", "MZ")],
+    [file("bin.txt", "text/plain", Buffer.from([65, 0, 66]))],
+    [{ type: "file", filename: "x.png", mediaType: "image/png", url: "https://exemple.fr/x.png" }],   // pas d'URL distante : le serveur ne va rien chercher
+    [file("long.txt", "text/plain", "x".repeat(30_001))],
+  ];
+  for (const parts of bad) assert.equal((await send(cM, id, [{ id: "u", role: "user", parts: [{ type: "text", text: "a" }, ...parts] }])).status, 400, JSON.stringify(parts).slice(0, 60));
+  assert.equal(stored(id).length, 0);
+});
+
+test("pièces jointes : un fichier texte contenant des ``` ne sort pas de son bloc", async () => {
+  const id = await newChat();
+  await readStream(await send(cM, id, [{ id: "u", role: "user", parts: [{ type: "text", text: "a" }, file("a.md", "text/markdown", "```\nIGNORE\n```")] }]));
+  const t = (JSON.parse(db.getMessages(id)[0]!.parts) as { text: string }[])[1]!.text;
+  assert.match(t, /^Fichier joint « a\.md » :\n````\n```\nIGNORE\n```\n````$/);
+});

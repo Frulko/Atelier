@@ -99,12 +99,13 @@ test("en-têtes de sécurité sur chaque réponse, y compris l'API et les erreur
     const h = (await raw(p)).headers;
     assert.match(String(h["content-security-policy"]), /default-src 'self'/, p);
     assert.match(String(h["content-security-policy"]), /frame-ancestors 'none'/, p);
-    assert.match(String(h["content-security-policy"]), /script-src 'self'(;|$)/, p); // pas de 'unsafe-inline' sur les scripts
+    assert.match(String(h["content-security-policy"]), /script-src 'self' 'wasm-unsafe-eval'(;|$)/, p); // ni 'unsafe-inline' ni 'unsafe-eval' : seul WebAssembly (coloration du code) est permis
+    assert.doesNotMatch(String(h["content-security-policy"]), /'unsafe-eval'/, p);
     assert.equal(h["x-content-type-options"], "nosniff", p);
     assert.equal(h["x-frame-options"], "DENY", p);
     assert.equal(h["referrer-policy"], "no-referrer", p);
   }
-  assert.ok(!String((await raw("/")).headers["content-security-policy"]).includes("unsafe-eval"));
+  assert.ok(!String((await raw("/")).headers["content-security-policy"]).replace("'wasm-unsafe-eval'", "").includes("unsafe-eval"));
 });
 
 test("les réponses d'API ne sont jamais mises en cache ; HSTS seulement en HTTPS", async () => {

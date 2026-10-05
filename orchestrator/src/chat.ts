@@ -1,3 +1,4 @@
+import type { Part } from "./attachments.ts";
 import type { ServerResponse } from "node:http";
 import { convertToModelMessages, streamText, type LanguageModel, type UIMessage } from "ai";
 import type { LanguageModelV3StreamPart } from "@ai-sdk/provider";
@@ -53,13 +54,17 @@ async function fakeModel(): Promise<LanguageModel> {
     doStream: async (options) => {
       const system = options.prompt.filter((m) => m.role === "system").map((m) => (typeof m.content === "string" ? m.content : "")).join("\n");
       const lastUser = [...options.prompt].reverse().find((m) => m.role === "user");
-      const asked = Array.isArray(lastUser?.content) ? lastUser!.content.map((p) => (p.type === "text" ? p.text : "")).join(" ") : "";
+      const parts = Array.isArray(lastUser?.content) ? lastUser!.content : [];
+      const asked = parts.map((p) => (p.type === "text" ? p.text : "")).join(" ");
+      const attached = parts.filter((p) => p.type === "file").length;
       const known = [...(system.split("# Connaissances de l'organisation")[1] ?? "").matchAll(/^## (.+)$/gm)].map((m) => m[1]!);
       const project = /^# Projet : (.+)$/m.exec(system)?.[1];
       const text = [
         "**Réponse factice** — aucun modèle n'a été appelé (mode démonstration).",
         `Tu as écrit : « ${asked.trim().slice(0, 300)} ».`,
         project ? `Projet : ${project}.` : "Aucun projet n'est rattaché à cette discussion.",
+        ...(/\bcode\b/i.test(asked) ? ["```html\n<a href=\"/contact\">Contact</a>\n```"] : []),
+        ...(attached ? [`Pièces jointes reçues : ${attached}.`] : []),
         known.length ? `Connaissances reçues :\n${known.map((k) => `- ${k}`).join("\n")}` : "Aucune connaissance n'a été fournie.",
       ].join("\n\n");
       const words = text.split(/(\s+)/);
@@ -116,14 +121,16 @@ export function friendlyError(e: unknown): string {
  * Lance la réponse de l'assistant et la diffuse vers `res`. `text` : nouvelle question ; `null` : régénérer la dernière réponse.
  * Rend une erreur à renvoyer AVANT tout flux (clé absente…), ou null si le flux est parti.
  */
-export async function runChat(o: { res: ServerResponse; conv: ConversationRow; orgId: string; text: string | null; signal: AbortSignal }): Promise<{ status: number; error: string } | null> {
+export async function runChat(o: { res: ServerResponse; conv: ConversationRow; orgId: string; text: string | null; files?: Part[]; signal: AbortSignal }): Promise<{ status: number; error: string } | null> {
   const m = await resolveModel(o.orgId);
   if (!m.ok) return { status: m.status, error: m.error };
   const project = o.conv.project_id ? getProjectInOrg(o.conv.project_id, o.orgId) : undefined;
 
   if (o.text !== null) {
-    insertMessage(o.conv.id, "user", [{ type: "text", text: o.text }]);
-    if (o.conv.title === DEFAULT_TITLE) setConversationTitle(o.conv.id, titleFrom(o.text));
+    const files = o.files ?? [];
+    insertMessage(o.conv.id, "user", [...(o.text ? [{ type: "text", text: o.text }] : []), ...files]);
+    const named = o.text || (files.find((f) => f.type === "file") as { filename?: string } | undefined)?.filename || "";
+    if (o.conv.title === DEFAULT_TITLE && named) setConversationTitle(o.conv.id, titleFrom(named));
   } else deleteTrailingAssistant(o.conv.id);
 
   const history = getMessages(o.conv.id).map(toUIMessage);

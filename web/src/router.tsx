@@ -1,5 +1,5 @@
 import type { QueryClient } from "@tanstack/react-query";
-import { createRootRouteWithContext, createRoute, createRouter, Link, Outlet, redirect } from "@tanstack/react-router";
+import { createRootRouteWithContext, createRoute, createRouter, lazyRouteComponent, Link, Outlet, redirect } from "@tanstack/react-router";
 import { AppShell } from "./components/layout/AppShell";
 import { lastOrg } from "./components/layout/OrgSwitcher";
 import { Button } from "./components/ui/Button";
@@ -9,7 +9,7 @@ import { AuditPage } from "./features/audit/AuditPage";
 import { InvitePage } from "./features/auth/InvitePage";
 import { LoginPage } from "./features/auth/LoginPage";
 import { IntegrationsPage } from "./features/integrations/IntegrationsPage";
-import { ConversationPage, ConversationsPage } from "./features/conversations/ConversationPages";
+import { ConversationsPage } from "./features/conversations/ConversationsPage";
 import { KnowledgePage } from "./features/knowledge/KnowledgePage";
 import { OrgSettingsPage } from "./features/org/OrgSettingsPage";
 import { OverviewPage } from "./features/overview/OverviewPage";
@@ -81,7 +81,7 @@ const tasksRoute = createRoute({
 const taskRoute = createRoute({ getParentRoute: () => orgRoute, path: "tasks/$taskId", component: TaskDetailPage });
 const conversationsRoute = child("conversations", ConversationsPage);
 const conversationRoute = createRoute({
-  getParentRoute: () => orgRoute, path: "conversations/$conversationId", component: ConversationPage,
+  getParentRoute: () => orgRoute, path: "conversations/$conversationId", component: lazyRouteComponent(() => import("./features/conversations/ConversationPage"), "ConversationPage"),
   validateSearch: (s: Record<string, unknown>) => compact({ first: str(s.first) }),
 });
 const projectsRoute = child("projects", ProjectsPage);

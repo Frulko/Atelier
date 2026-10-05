@@ -16,13 +16,14 @@ import { hashInviteToken, INVITE_TTL_MS, newInviteToken } from "./invites.ts";
 import { cancel, enqueue, newId } from "./pipeline.ts";
 import { securityHeaders, serveStatic } from "./static.ts";
 import { startTask } from "./start.ts";
+import { cleanAttachments, MAX_BODY_BYTES } from "./attachments.ts";
 import { CHAT_PROVIDERS, effectiveChat, MAX_MESSAGE_CHARS, MAX_MESSAGES, runChat, textOf, toUIMessage } from "./chat.ts";
 
 const json = (res: http.ServerResponse, code: number, body: unknown, headers: Record<string, string> = {}) =>
   res.writeHead(code, { "content-type": "application/json", ...headers }).end(JSON.stringify(body));
 
-const body = (req: http.IncomingMessage) => new Promise<any>((ok, ko) => {
-  let s = ""; req.on("data", (d) => { s += d; if (s.length > 1e5) req.destroy(); });
+const body = (req: http.IncomingMessage, max = 1e5) => new Promise<any>((ok, ko) => {
+  let s = ""; req.on("data", (d) => { s += d; if (s.length > max) req.destroy(); });
   req.on("end", () => { try { ok(JSON.parse(s || "{}")); } catch (e) { ko(e); } });
 });
 
@@ -530,15 +531,18 @@ export function createApp() {
               if (chatLimiter.blocked(`chat:${user.id}`)) return json(res, 429, { error: "trop de messages en peu de temps, réessaie dans un instant" });
               chatLimiter.fail(`chat:${user.id}`); // chaque message compte, réussi ou non
               if (overBudget(orgId)) return json(res, 402, { error: "budget mensuel de l'organisation épuisé" });
-              const b = await body(req);
+              const b = await body(req, MAX_BODY_BYTES);
               const regenerate = b.trigger === "regenerate-message";
               const last = Array.isArray(b.messages) ? b.messages[b.messages.length - 1] : undefined;
-              const text = regenerate ? null : textOf({ parts: last?.role === "user" && Array.isArray(last.parts) ? last.parts : [] });
-              if (!regenerate && (!text || text.length > MAX_MESSAGE_CHARS)) return json(res, 400, { error: "message vide ou trop long" });
+              const lastParts: unknown[] = last?.role === "user" && Array.isArray(last.parts) ? last.parts : [];
+              const text = regenerate ? null : textOf({ parts: lastParts as never });
+              const att = regenerate ? { ok: true as const, parts: [] } : cleanAttachments(lastParts);
+              if (!att.ok) return json(res, 400, { error: att.error });
+              if (!regenerate && ((!text && !att.parts.length) || (text?.length ?? 0) > MAX_MESSAGE_CHARS)) return json(res, 400, { error: "message vide ou trop long" });
               if (countMessages(conv.id) >= MAX_MESSAGES) return json(res, 409, { error: "cette discussion est trop longue : ouvre-en une nouvelle" });
               const ac = new AbortController();
               res.on("close", () => { if (!res.writableEnded) ac.abort(); }); // le bouton « Arrêter » ferme la connexion
-              const err = await runChat({ res, conv, orgId, text, signal: ac.signal });
+              const err = await runChat({ res, conv, orgId, text, files: att.parts, signal: ac.signal });
               if (err) return json(res, err.status, { error: err.error });
               return;
             }

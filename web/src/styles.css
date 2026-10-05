@@ -1,4 +1,8 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+/* Streamdown (rendu Markdown des réponses) et les composants AI Elements portent leurs classes Tailwind dans node_modules. */
+@source "../node_modules/streamdown/dist/*.js";
+@source "../node_modules/@streamdown/*/dist/*.js";
 @import "@fontsource-variable/geist/index.css";
 @import "@fontsource-variable/geist-mono/index.css";
 
@@ -54,6 +58,13 @@
   --color-bad: var(--bad); --color-bad-soft: var(--bad-soft); --color-info: var(--info); --color-info-soft: var(--info-soft);
   --color-side: var(--side); --color-side-ink: var(--side-ink); --color-side-muted: var(--side-muted); --color-side-line: var(--side-line);
   --color-side-hover: var(--side-hover); --color-side-active: var(--side-active);
+  /* Noms attendus par les composants shadcn / AI Elements (components/shadcn, components/ai-elements), reliés à nos variables. */
+  --color-background: var(--paper); --color-foreground: var(--ink);
+  --color-card: var(--raised); --color-card-foreground: var(--ink); --color-popover: var(--raised); --color-popover-foreground: var(--ink);
+  --color-border: var(--line); --color-input: var(--line-strong); --color-ring: var(--accent);
+  --color-secondary: var(--line); --color-secondary-foreground: var(--ink); --color-primary-foreground: var(--primary-ink);
+  --color-muted-foreground: var(--muted); --color-destructive: var(--bad);
+  --color-subtle: color-mix(in srgb, var(--line) 50%, transparent); --color-hover: var(--line);
   --shadow-card: 0 1px 2px 0 rgb(0 0 0 / 0.05);
   --shadow-pop: 0 0 0 1px var(--line), 0 16px 48px -12px rgb(0 0 0 / 0.28);
 }

@@ -1,7 +1,11 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2023",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "module": "ESNext",
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
@@ -11,7 +15,26 @@
     "skipLibCheck": true,
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
-    "types": ["vite/client", "node"]
+    "types": [
+      "vite/client",
+      "node"
+    ],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": [
+        "./src/*"
+      ]
+    }
   },
-  "include": ["src", "vite.config.ts"]
+  "include": [
+    "src",
+    "vite.config.ts"
+  ],
+  "exclude": [
+    "src/components/ai-elements/agent.tsx",
+    "src/components/ai-elements/context.tsx",
+    "src/components/ai-elements/jsx-preview.tsx",
+    "src/components/ai-elements/speech-input.tsx",
+    "src/components/ai-elements/stack-trace.tsx"
+  ]
 }

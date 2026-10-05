@@ -15,11 +15,12 @@ const MIME: Record<string, string> = {
   ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon", ".woff2": "font/woff2", ".woff": "font/woff", ".json": "application/json", ".txt": "text/plain; charset=utf-8",
 };
 
-// Tout est servi par nous-mêmes : ni script, ni style, ni police, ni image venus d'ailleurs. Seuls les attributs style=""
+// 'wasm-unsafe-eval' : la coloration du code (Shiki) compile un module WebAssembly ; cela n'autorise PAS eval() sur du texte.
+// blob: (images, connect) : l'aperçu d'un fichier choisi avant envoi, puis sa lecture pour l'envoyer. Tout est servi par nous-mêmes : ni script, ni style, ni police, ni image venus d'ailleurs. Seuls les attributs style=""
 // (positions et largeurs calculées) sont tolérés, pas les balises <style> ni les scripts en ligne.
 export const CSP = [
-  "default-src 'self'", "script-src 'self'", "style-src 'self'", "style-src-attr 'unsafe-inline'", "img-src 'self' data:", "font-src 'self'",
-  "connect-src 'self'", "frame-ancestors 'none'", "base-uri 'none'", "form-action 'self'", "object-src 'none'",
+  "default-src 'self'", "script-src 'self' 'wasm-unsafe-eval'", "style-src 'self'", "style-src-attr 'unsafe-inline'", "img-src 'self' data: blob:", "font-src 'self'",
+  "connect-src 'self' blob:", "frame-ancestors 'none'", "base-uri 'none'", "form-action 'self'", "object-src 'none'",
 ].join("; ");
 
 export function securityHeaders(res: http.ServerResponse, secure: boolean) {
