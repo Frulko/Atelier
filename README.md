@@ -52,6 +52,7 @@ Read **[Security → known limitations](docs/security.md#known-limitations)** be
 | [Deployment](docs/deployment.md) | Docker, Portainer, reverse proxy, backups |
 | [Testing](docs/testing.md) | How to run the checks, what is and is not covered |
 | [Roadmap](docs/roadmap.md) | Milestones and the path to a multi-tenant SaaS |
+| [Web application design](docs/ui-design.md) | The full SaaS interface: pages, stack, backend additions, phases |
 
 Contributing with an AI assistant or by hand? Start with **[CLAUDE.md](CLAUDE.md)**.
 
