@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { auditTone, describeAudit } from "./labels";
+import { auditTone, describeAudit, describeOwn } from "./labels";
 
 test("describeAudit : phrases lisibles, avec les détails du journal", () => {
   expect(describeAudit({ action: "member.role", meta: { email: "a@b.fr", from: "member", to: "admin" } })).toBe("a changé le rôle de a@b.fr : Membre → Administrateur");
@@ -20,4 +20,11 @@ test("auditTone : ce qui détruit ressort, ce qui crée est positif", () => {
   expect(auditTone("project.create")).toBe("ok");
   expect(auditTone("member.role")).toBe("warn");
   expect(auditTone("task.cancel")).toBe("muted");
+});
+
+test("describeOwn : la même phrase à la deuxième personne", () => {
+  expect(describeOwn({ action: "task.create", meta: { project: "X" } })).toBe("Tu as lancé une tâche sur « X »");
+  expect(describeOwn({ action: "auth.login", meta: null })).toBe("Tu t'es connecté(e)");
+  expect(describeOwn({ action: "auth.login_failed", meta: null })).toBe("Tentative de connexion échouée");
+  expect(describeOwn({ action: "invitation.accept", meta: { email: "a@b.fr", role: "member" } })).toBe("Tu as rejoint l'organisation (membre)");
 });

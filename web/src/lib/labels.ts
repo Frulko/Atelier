@@ -64,3 +64,12 @@ export function auditTone(action: string): Tone {
   if (/update|rename|role|budget|password/.test(action)) return "warn";
   return "muted";
 }
+
+/** Même phrase, à la deuxième personne : pour la page « Mon compte », où l'auteur, c'est toi. */
+export function describeOwn(e: Pick<AuditItem, "action" | "meta">): string {
+  if (e.action === "invitation.accept") return `Tu as rejoint l'organisation (${role(e.meta?.role).toLowerCase()})`;
+  const t = describeAudit(e);
+  if (t.startsWith("a ")) return `Tu as ${t.slice(2)}`;
+  if (t.startsWith("s'est ")) return `Tu t'es ${t.slice(6)}`;
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}

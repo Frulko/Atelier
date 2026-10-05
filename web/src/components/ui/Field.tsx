@@ -4,7 +4,7 @@ import { useId } from "react";
 
 const control = "w-full rounded-[10px] border border-line-strong bg-raised px-3 text-sm text-ink placeholder:text-faint transition focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/25 disabled:opacity-50";
 
-export function Field({ label, hint, error, children, className }: { label: string; hint?: ReactNode; error?: string | null; children: (id: string) => ReactNode; className?: string }) {
+export function Field({ label, hint, error, children, className }: { label: ReactNode; hint?: ReactNode; error?: string | null; children: (id: string) => ReactNode; className?: string }) {
   const id = useId();
   return (
     <div className={clsx("grid gap-1.5", className)}>
