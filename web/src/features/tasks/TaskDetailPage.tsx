@@ -44,7 +44,7 @@ export function TaskDetailPage() {
   });
   const retry = useMutation({
     mutationFn: () => api.post<Task>(`/api/orgs/${orgId}/tasks/${taskId}/retry`),
-    onSuccess: (n) => { invalidateOrg(orgId, "tasks"); toast("Nouvelle tâche lancée."); navigate({ to: "/o/$orgId/tasks/$taskId", params: { orgId, taskId: n.id } }); },
+    onSuccess: (n) => { invalidateOrg(orgId, "tasks"); invalidateOrg(orgId, "conversations"); toast("Nouvelle tâche lancée."); navigate({ to: "/o/$orgId/tasks/$taskId", params: { orgId, taskId: n.id } }); },
     onError: (e) => toast(e instanceof Error ? e.message : "Échec", "bad"),
   });
 

@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { getRouteApi, Link, useNavigate } from "@tanstack/react-router";
 import { Bot, ListChecks, MessageSquare, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Badge } from "../../components/ui/Badge";
@@ -21,14 +21,14 @@ const MODES: { id: Mode; label: string; hint: string; icon: typeof Bot }[] = [
   { id: "task", label: "Tâche", hint: "L'agent modifie le code dans un bac à sable et prépare une proposition à relire.", icon: ListChecks },
 ];
 
-function NewDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+function NewDialog({ open, onClose, initial }: { open: boolean; onClose: () => void; initial?: { mode: Mode; text: string } }) {
   const { orgId, role } = useOrg();
   const navigate = useNavigate();
   const projects = useQuery(projectsQuery(orgId));
   const canTask = atLeast(role, "member");
-  const [mode, setMode] = useState<Mode>("chat");
+  const [mode, setMode] = useState<Mode>(initial?.mode ?? "chat");
   const [project, setProject] = useState("");
-  const [text, setText] = useState("");
+  const [text, setText] = useState(initial?.text ?? "");
   useEffect(() => { if (open) setProject((p) => p || projects.data?.[0]?.id || ""); }, [open, projects.data]);
 
   const create = useMutation({
@@ -75,7 +75,9 @@ function NewDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
 
 export function ConversationsPage() {
   const { orgId } = useOrg();
-  const [open, setOpen] = useState(false);
+  const search = getRouteApi("/o/$orgId/conversations").useSearch();
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(!!search.new);
   const [mode, setMode] = useState<"" | Mode>("");
   const list = useQuery(conversationsQuery(orgId));
   const items = (list.data?.items ?? []).filter((c) => !mode || c.mode === mode);
@@ -105,7 +107,7 @@ export function ConversationsPage() {
           ))}
         </Card>
       )}
-      <NewDialog open={open} onClose={() => setOpen(false)} />
+      {open && <NewDialog open onClose={() => { setOpen(false); if (search.new) navigate({ to: ".", search: {}, replace: true }); }} initial={search.new ? { mode: search.new as Mode, text: search.text ?? "" } : undefined} />}
     </>
   );
 }

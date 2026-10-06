@@ -1,6 +1,8 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { BookOpen, FileUp, Pencil, Pin, Plus, Search, Sparkles, Trash2 } from "lucide-react";
+import { getRouteApi, useNavigate } from "@tanstack/react-router";
 import { useRef, useState } from "react";
+import { BAKERY } from "../guide/starters";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Card, PageHeader, Section } from "../../components/ui/Card";
@@ -19,13 +21,13 @@ import type { KnowledgeBrief, KnowledgePreview } from "../../lib/types";
 
 const BUDGET = 24_000, MAX = 12_000;
 
-function Editor({ open, onClose, item }: { open: boolean; onClose: () => void; item?: KnowledgeBrief }) {
+function Editor({ open, onClose, item, preset }: { open: boolean; onClose: () => void; item?: KnowledgeBrief; preset?: { title: string; content: string } }) {
   const { orgId } = useOrg();
   const toast = useToast();
   const projects = useQuery(projectsQuery(orgId));
   const full = useQuery({ ...knowledgeItemQuery(orgId, item?.id ?? ""), enabled: open && !!item });
-  const [title, setTitle] = useState(item?.title ?? "");
-  const [content, setContent] = useState<string | null>(null);
+  const [title, setTitle] = useState(item?.title ?? preset?.title ?? "");
+  const [content, setContent] = useState<string | null>(preset?.content ?? null);
   const [scope, setScope] = useState(item?.projectId ?? "");
   const [enabled, setEnabled] = useState(item?.enabled ?? true);
   const [pinned, setPinned] = useState(item?.pinned ?? false);
@@ -112,12 +114,16 @@ function Tester() {
   );
 }
 
+const knowledgeRoute = getRouteApi("/o/$orgId/knowledge");
+
 export function KnowledgePage() {
+  const navigate = useNavigate();
   const { orgId, isAdmin } = useOrg();
   const list = useQuery(knowledgeQuery(orgId));
   const projects = useQuery(projectsQuery(orgId));
   const toast = useToast();
-  const [editing, setEditing] = useState<{ item?: KnowledgeBrief } | null>(null);
+  const starter = knowledgeRoute.useSearch().starter;
+  const [editing, setEditing] = useState<{ item?: KnowledgeBrief; preset?: { title: string; content: string } } | null>(isAdmin && starter ? { preset: BAKERY.knowledge } : null);
   const [scope, setScope] = useState<"all" | "org" | "project">("all");
   const [q, setQ] = useState("");
   const name = new Map(projects.data?.map((p) => [p.id, p.name]));
@@ -174,7 +180,7 @@ export function KnowledgePage() {
             </ul>
           )}
       </Section>
-      {editing && <Editor key={editing.item?.id ?? "new"} open onClose={() => setEditing(null)} item={editing.item} />}
+      {editing && <Editor key={editing.item?.id ?? "new"} open onClose={() => { setEditing(null); if (starter) navigate({ to: ".", search: {}, replace: true }); }} item={editing.item} preset={editing.preset} />}
     </>
   );
 }

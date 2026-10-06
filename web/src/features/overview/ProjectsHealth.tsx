@@ -98,8 +98,8 @@ export function ProjectsHealth() {
   if (!q.data?.length) return null;
   const down = q.data.filter((s) => s.health && !s.health.ok).length;
   return (
-    <Section title="Projets" hint={down ? `${down} hors ligne` : "Santé, dernier commit et déploiement, mis à jour en continu."} className="mb-10" index={1}>
+    <div data-tour="projects-health"><Section title="Projets" hint={down ? `${down} hors ligne` : "Santé, dernier commit et déploiement, mis à jour en continu."} className="mb-10" index={1}>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{q.data.map((s) => <ProjectCard key={s.projectId} s={s} />)}</div>
-    </Section>
+    </Section></div>
   );
 }

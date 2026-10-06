@@ -10,6 +10,7 @@ import { InvitePage } from "./features/auth/InvitePage";
 import { LoginPage } from "./features/auth/LoginPage";
 import { IntegrationsPage } from "./features/integrations/IntegrationsPage";
 import { ConversationsPage } from "./features/conversations/ConversationsPage";
+import { GuidePage } from "./features/guide/GuidePage";
 import { KnowledgePage } from "./features/knowledge/KnowledgePage";
 import { OrgSettingsPage } from "./features/org/OrgSettingsPage";
 import { OverviewPage } from "./features/overview/OverviewPage";
@@ -79,14 +80,18 @@ const tasksRoute = createRoute({
   validateSearch: (s: Record<string, unknown>) => compact({ status: str(s.status), project: str(s.project), user: str(s.user), q: str(s.q), from: str(s.from), to: str(s.to), page: pageNo(s.page) }),
 });
 const taskRoute = createRoute({ getParentRoute: () => orgRoute, path: "tasks/$taskId", component: TaskDetailPage });
-const conversationsRoute = child("conversations", ConversationsPage);
+const conversationsRoute = createRoute({
+  getParentRoute: () => orgRoute, path: "conversations", component: ConversationsPage,
+  validateSearch: (s: Record<string, unknown>) => compact({ new: s.new === "chat" || s.new === "task" ? s.new : undefined, text: str(s.text) }),
+});
+const guideRoute = child("guide", GuidePage);
 const conversationRoute = createRoute({
   getParentRoute: () => orgRoute, path: "conversations/$conversationId", component: lazyRouteComponent(() => import("./features/conversations/ConversationPage"), "ConversationPage"),
   validateSearch: (s: Record<string, unknown>) => compact({ first: str(s.first) }),
 });
 const projectsRoute = child("projects", ProjectsPage);
 const projectRoute = createRoute({ getParentRoute: () => orgRoute, path: "projects/$projectId", component: ProjectDetailPage });
-const knowledgeRoute = child("knowledge", KnowledgePage);
+const knowledgeRoute = createRoute({ getParentRoute: () => orgRoute, path: "knowledge", component: KnowledgePage, validateSearch: (s: Record<string, unknown>) => compact({ starter: s.starter === "bakery" ? s.starter : undefined }) });
 const teamRoute = createRoute({ getParentRoute: () => orgRoute, path: "team", component: TeamPage, beforeLoad: adminOnly });
 const integrationsRoute = createRoute({ getParentRoute: () => orgRoute, path: "integrations", component: IntegrationsPage, beforeLoad: adminOnly });
 const usageRoute = createRoute({ getParentRoute: () => orgRoute, path: "usage", component: UsagePage, beforeLoad: adminOnly });
@@ -99,7 +104,7 @@ const accountRoute = child("account", AccountPage);
 
 const routeTree = rootRoute.addChildren([
   loginRoute, inviteRoute, indexRoute,
-  orgRoute.addChildren([overviewRoute, conversationsRoute, conversationRoute, tasksRoute, taskRoute, projectsRoute, projectRoute, knowledgeRoute, teamRoute, integrationsRoute, usageRoute, auditRoute, settingsRoute, accountRoute]),
+  orgRoute.addChildren([overviewRoute, conversationsRoute, conversationRoute, tasksRoute, taskRoute, projectsRoute, projectRoute, knowledgeRoute, guideRoute, teamRoute, integrationsRoute, usageRoute, auditRoute, settingsRoute, accountRoute]),
 ]);
 
 export const router = createRouter({ routeTree, context: { queryClient: undefined as unknown as QueryClient }, defaultPreload: "intent", scrollRestoration: true });

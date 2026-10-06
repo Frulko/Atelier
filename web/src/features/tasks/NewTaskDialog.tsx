@@ -26,7 +26,7 @@ export function NewTaskDialog({ open, onClose, defaultProject }: { open: boolean
   const create = useMutation({
     mutationFn: () => api.post<Task>(`/api/orgs/${orgId}/tasks`, { project, prompt }),
     onSuccess: (t) => {
-      invalidateOrg(orgId, "tasks"); invalidateOrg(orgId, "stats");
+      invalidateOrg(orgId, "tasks"); invalidateOrg(orgId, "stats"); invalidateOrg(orgId, "conversations"); invalidateOrg(orgId, "status");
       setPrompt(""); onClose(); toast("Tâche lancée : l'agent s'y met.");
       navigate({ to: "/o/$orgId/tasks/$taskId", params: { orgId, taskId: t.id } });
     },

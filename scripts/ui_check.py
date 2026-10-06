@@ -52,7 +52,10 @@ with sync_playwright() as p:
         browser = p.chromium.launch()
     expect.set_options(timeout=20000)
 
-    admin = browser.new_context(viewport={"width": 1440, "height": 900}).new_page()
+    def quiet(ctx):
+        ctx.add_init_script("localStorage.setItem('atelier.tour.disabled', '1')")   # the welcome tour is tested on its own below
+        return ctx
+    admin = quiet(browser.new_context(viewport={"width": 1440, "height": 900})).new_page()
     watch(admin)
 
     # ---------------------------------------------------------------- sign in
@@ -215,6 +218,47 @@ with sync_playwright() as p:
     expect(admin.get_by_role("listitem").filter(has_text=f"charte-{RUN}")).to_have_count(0)
     os.unlink(charte)
 
+    # ------------------------------------------------------------ guide, first steps and the welcome tour
+    nav(admin, "Guide")
+    expect(admin.get_by_role("heading", level=1, name="Guide")).to_be_visible()
+    steps = admin.get_by_test_id("first-steps")
+    expect(steps.locator("li[data-done='true']").filter(has_text="Lancer une tâche")).to_have_count(1)   # ticked from real data
+    expect(steps.locator("li[data-done='true']").filter(has_text="Demander un ajustement")).to_have_count(1)
+    expect(admin.get_by_text("Ce que l'agent peut faire, ou non")).to_be_visible()
+    shot(admin, "05d-guide")
+    steps.get_by_role("button", name="Ajouter « Ton et couleurs »").click()                # a step of the story prefills what to write
+    dlg = admin.get_by_role("dialog")
+    expect(dlg.get_by_label("Titre")).to_have_value("Ton et couleurs du site")
+    expect(dlg.get_by_label("Contenu")).to_have_value(re.compile("Ton chaleureux"))
+    dlg.get_by_role("button", name="Annuler").click()
+    expect(admin.get_by_role("dialog")).to_have_count(0)
+    nav(admin, "Guide")
+    admin.get_by_role("button", name="Revoir la visite guidée").click()                    # replay the tour with the keyboard
+    tour = admin.get_by_test_id("tour")
+    expect(tour.get_by_role("dialog", name="Bienvenue dans Atelier")).to_be_visible()
+    admin.keyboard.press("ArrowRight")
+    expect(tour.get_by_role("dialog", name="Ton organisation")).to_be_visible()
+    shot(admin, "05e-tour")
+    admin.keyboard.press("ArrowLeft")
+    expect(tour.get_by_role("dialog", name="Bienvenue dans Atelier")).to_be_visible()
+    admin.keyboard.press("Escape")
+    expect(tour).to_have_count(0)
+    fresh = browser.new_context(viewport={"width": 1280, "height": 800}).new_page()       # NOT quiet: first sign-in shows the tour once
+    fresh.on("console", lambda m: errors.append(f"console(tour): {m.text}") if m.type == "error" and "Failed to load resource" not in m.text else None)
+    fresh.goto(f"{BASE}/login")
+    sign_in(fresh, EMAIL, PASSWORD)
+    expect(fresh.get_by_test_id("tour").get_by_role("dialog")).to_be_visible(timeout=15000)
+    for _ in range(12):                                                                   # walk to the end: the last step opens the guide
+        if fresh.get_by_role("button", name="Commencer les premiers pas").count(): break
+        fresh.keyboard.press("ArrowRight")
+    fresh.get_by_role("button", name="Commencer les premiers pas").click()
+    fresh.wait_for_url("**/guide")
+    expect(fresh.get_by_test_id("tour")).to_have_count(0)
+    fresh.reload()
+    fresh.wait_for_timeout(1500)
+    expect(fresh.get_by_test_id("tour")).to_have_count(0)                                 # remembered: not shown again
+    fresh.close()
+
     # ------------------------------------------------------------------- team
     nav(admin, "Équipe")
     admin.get_by_role("button", name="Inviter").first.click()
@@ -226,7 +270,7 @@ with sync_playwright() as p:
     dlg.get_by_role("button", name="Terminé").click()
     expect(admin.get_by_text(INVITEE)).to_be_visible()                                      # pending invitation listed
 
-    guest = browser.new_context(viewport={"width": 1280, "height": 800}).new_page()
+    guest = quiet(browser.new_context(viewport={"width": 1280, "height": 800})).new_page()
     watch(guest)
     guest.goto(link)
     expect(guest.get_by_role("heading", name="Tu es invité(e).")).to_be_visible()
@@ -316,7 +360,7 @@ with sync_playwright() as p:
     expect(admin.get_by_text("Profil enregistré.").first).to_be_visible()
 
     # ----------------------------------------------------------------- mobile
-    phone = browser.new_context(viewport={"width": 390, "height": 800}).new_page()
+    phone = quiet(browser.new_context(viewport={"width": 390, "height": 800})).new_page()
     watch(phone)
     phone.goto(f"{BASE}/login")
     sign_in(phone, EMAIL, PASSWORD)

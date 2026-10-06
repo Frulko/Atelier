@@ -16,6 +16,7 @@ import { fmtDuration, fmtPct, fmtUsd, relTime } from "../../lib/format";
 import { isActive } from "../../lib/labels";
 import { orgQuery, projectsQuery, statsQuery, tasksQuery } from "../../lib/queries";
 import { useOrg } from "../../lib/useOrg";
+import { FirstStepsCard } from "../guide/FirstSteps";
 import { ProjectsHealth } from "./ProjectsHealth";
 import type { Task } from "../../lib/types";
 
@@ -87,6 +88,7 @@ export function OverviewPage() {
         </Card>
       )}
 
+      {!noProject && <FirstStepsCard />}
       <ProjectsHealth />
 
       <div className="mb-10 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

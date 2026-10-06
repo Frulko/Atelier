@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, Outlet, useNavigate } from "@tanstack/react-router";
 import clsx from "clsx";
-import { BarChart3, BookOpen, FolderGit2, MessagesSquare, LayoutDashboard, ListChecks, LogOut, Menu, Plug, ScrollText, Settings, Users, X, type LucideIcon } from "lucide-react";
+import { BarChart3, BookOpen, CircleHelp, FolderGit2, MessagesSquare, LayoutDashboard, ListChecks, LogOut, Menu, Plug, ScrollText, Settings, Users, X, type LucideIcon } from "lucide-react";
 import { useState } from "react";
 import { api } from "../../lib/api";
 import { meQuery } from "../../lib/queries";
@@ -9,19 +9,21 @@ import { useOrg } from "../../lib/useOrg";
 import { Avatar } from "../ui/Avatar";
 import { Logo } from "./Logo";
 import { OrgSwitcher } from "./OrgSwitcher";
+import { TourProvider } from "../../features/guide/Tour";
 
-type Item = { to: string; label: string; icon: LucideIcon; admin?: boolean; exact?: boolean };
+type Item = { to: string; label: string; icon: LucideIcon; admin?: boolean; exact?: boolean; tour?: string };
 const ITEMS: Item[] = [
   { to: "/o/$orgId", label: "Vue d'ensemble", icon: LayoutDashboard, exact: true },
-  { to: "/o/$orgId/conversations", label: "Conversations", icon: MessagesSquare },
-  { to: "/o/$orgId/tasks", label: "Tâches", icon: ListChecks },
-  { to: "/o/$orgId/projects", label: "Projets", icon: FolderGit2 },
-  { to: "/o/$orgId/knowledge", label: "Connaissances", icon: BookOpen },
+  { to: "/o/$orgId/conversations", label: "Conversations", icon: MessagesSquare, tour: "nav-conversations" },
+  { to: "/o/$orgId/tasks", label: "Tâches", icon: ListChecks, tour: "nav-tasks" },
+  { to: "/o/$orgId/projects", label: "Projets", icon: FolderGit2, tour: "nav-projects" },
+  { to: "/o/$orgId/knowledge", label: "Connaissances", icon: BookOpen, tour: "nav-knowledge" },
   { to: "/o/$orgId/team", label: "Équipe", icon: Users, admin: true },
   { to: "/o/$orgId/integrations", label: "Intégrations", icon: Plug, admin: true },
   { to: "/o/$orgId/usage", label: "Usage", icon: BarChart3, admin: true },
   { to: "/o/$orgId/audit", label: "Journal d'audit", icon: ScrollText, admin: true },
   { to: "/o/$orgId/settings", label: "Organisation", icon: Settings, admin: true },
+  { to: "/o/$orgId/guide", label: "Guide", icon: CircleHelp, tour: "nav-guide" },
 ];
 
 function Nav({ onNavigate }: { onNavigate?: () => void }) {
@@ -29,7 +31,7 @@ function Nav({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <nav aria-label="Navigation principale" className="grid gap-0.5">
       {ITEMS.filter((i) => !i.admin || isAdmin).map((i) => (
-        <Link key={i.to} to={i.to} params={{ orgId }} onClick={onNavigate} activeOptions={{ exact: !!i.exact }}
+        <Link key={i.to} to={i.to} params={{ orgId }} data-tour={i.tour} onClick={onNavigate} activeOptions={{ exact: !!i.exact }}
           className="group flex items-center gap-3 rounded-md px-3 py-2 text-[14px] font-medium text-side-muted transition-colors hover:bg-side-hover hover:text-side-ink"
           activeProps={{ className: "!bg-side-active !text-side-ink [&>svg]:!text-accent" }}>
           <i.icon className="size-[18px] transition group-hover:text-side-ink" aria-hidden />
@@ -51,7 +53,7 @@ function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <div className="flex h-full flex-col gap-6 p-4">
       <div className="flex items-center gap-2.5 px-1 pt-1"><Logo /><span className="font-display text-lg text-side-ink">Atelier</span></div>
-      <OrgSwitcher />
+      <div data-tour="org-switcher"><OrgSwitcher /></div>
       <div className="min-h-0 flex-1 overflow-y-auto"><Nav onNavigate={onNavigate} /></div>
       <div className="border-t border-side-line pt-4">
         <Link to="/o/$orgId/account" params={{ orgId }} onClick={onNavigate} className="flex items-center gap-3 rounded-md px-2 py-2 transition-colors hover:bg-side-hover">
@@ -72,6 +74,7 @@ function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
 export function AppShell() {
   const [menu, setMenu] = useState(false);
   return (
+    <TourProvider>
     <div className="min-h-screen lg:grid lg:grid-cols-[16.5rem_1fr]">
       <aside className="sticky top-0 hidden h-screen border-r border-side-line bg-side lg:block" aria-label="Barre latérale"><SidebarBody /></aside>
 
@@ -89,5 +92,6 @@ export function AppShell() {
 
       <main className="min-w-0 px-5 py-8 sm:px-8 lg:px-12 lg:py-10"><div className="mx-auto max-w-[72rem]"><Outlet /></div></main>
     </div>
+    </TourProvider>
   );
 }
