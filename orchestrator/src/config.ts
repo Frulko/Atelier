@@ -37,8 +37,12 @@ export const inferForge = (repo: string): Project["forge"] =>
 
 export function loadLegacyProjects(): LegacyProject[] {
   const file = env("PROJECTS_FILE", "/data/projects.json")!;
-  const raw = env("PROJECTS_JSON") ?? (existsSync(file) ? readFileSync(file, "utf8") : "[]");
-  return (JSON.parse(raw) as Partial<LegacyProject>[]).map((p) => ({
+  // Une variable vide (Compose passe PROJECTS_JSON="" quand elle n'est pas renseignée) veut dire « aucun projet », pas « JSON invalide ».
+  const raw = env("PROJECTS_JSON")?.trim() || (existsSync(file) ? readFileSync(file, "utf8").trim() : "") || "[]";
+  let list: Partial<LegacyProject>[];
+  try { list = JSON.parse(raw); } catch { throw new Error("PROJECTS_JSON (ou projects.json) n'est pas un JSON valide : une liste de projets est attendue (voir projects.example.json)."); }
+  if (!Array.isArray(list)) throw new Error("PROJECTS_JSON doit être une liste de projets (voir projects.example.json).");
+  return list.map((p) => ({
     id: p.id!,
     name: p.name ?? p.id!,
     repo: p.repo!,
