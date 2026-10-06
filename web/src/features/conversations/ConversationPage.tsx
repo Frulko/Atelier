@@ -21,6 +21,7 @@ import { conversationQuery, invalidateOrg } from "../../lib/queries";
 import type { Conversation } from "../../lib/types";
 import { useOrg } from "../../lib/useOrg";
 import { TaskThread } from "./TaskThread";
+import { Logo } from "../../components/layout/Logo";
 import { useScope } from "../../lib/scope";
 
 
@@ -75,7 +76,7 @@ function MessageBody({ message }: { message: UIMessage }) {
         if (p.type !== "text") return null;
         const attached = message.role === "user" ? ATTACHED_TEXT.exec(p.text) : null;
         if (attached) return <span key={i} className="inline-flex w-fit items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs"><Paperclip className="size-3.5" aria-hidden />{attached[1]}</span>;
-        return message.role === "user" ? <p key={i} className="whitespace-pre-wrap">{p.text}</p> : <MessageResponse key={i}>{p.text}</MessageResponse>;
+        return message.role === "user" ? <p key={i} className="whitespace-pre-wrap">{p.text}</p> : <MessageResponse key={i} className="chat-md">{p.text}</MessageResponse>;
       })}
     </>
   );
@@ -130,14 +131,15 @@ function ChatWindow({ conversation, initial }: { conversation: Conversation; ini
   });
 
   return (
-    <Card className="flex h-[calc(100dvh-14rem)] min-h-[26rem] flex-col overflow-hidden">
+    <Card className="flex h-[calc(100dvh-16rem)] min-h-[28rem] flex-col overflow-hidden">
       <ChatScroll className="flex-1">
-        <ConversationContent className="mx-auto w-full max-w-3xl">
+        <ConversationContent className="mx-auto w-full max-w-3xl gap-7 px-5 py-8 sm:px-8">
           {messages.length === 0 && <ConversationEmptyState icon={<Bot className="size-6" />} title="Pose ta question" description="L'assistant connaît les connaissances de l'organisation. Il ne peut pas modifier le code : pour cela, lance une tâche." />}
           {messages.map((m) => {
             const sources = (m.metadata as { sources?: { id: string; title: string }[] } | undefined)?.sources;
             return (
-              <Message key={m.id} from={m.role}>
+              <Message key={m.id} from={m.role} className={m.role === "assistant" ? "relative max-w-full pl-10" : "max-w-[85%]"}>
+                {m.role === "assistant" && <Logo className="absolute left-0 top-0.5 size-6" />}
                 <MessageContent><MessageBody message={m} /></MessageContent>
                 {m.role === "assistant" && !!sources?.length && (
                   <Sources className="mb-0">
@@ -164,8 +166,8 @@ function ChatWindow({ conversation, initial }: { conversation: Conversation; ini
         </ConversationContent>
         <ConversationScrollButton />
       </ChatScroll>
-      <div className="border-t border-line p-3">
-        <PromptInput className="mx-auto max-w-3xl" accept={ACCEPT} multiple maxFiles={4} maxFileSize={4_000_000} globalDrop onError={(e) => toast(FILE_ERRORS[e.code])}
+      <div className="mx-auto w-full max-w-3xl px-5 pb-5 pt-2 sm:px-8">
+        <PromptInput className="w-full shadow-xs" accept={ACCEPT} multiple maxFiles={4} maxFileSize={4_000_000} globalDrop onError={(e) => toast(FILE_ERRORS[e.code])}
           onSubmit={(m) => { if (busy || (!m.text.trim() && !m.files.length)) return; sendMessage({ text: m.text.trim(), files: m.files }); }}>
           <PromptInputHeader><PickedFiles /></PromptInputHeader>
           <PromptInputBody><PromptInputTextarea aria-label="Ton message" placeholder="Écris ton message — Entrée pour envoyer, Maj+Entrée pour un retour à la ligne" maxLength={20000} /></PromptInputBody>
