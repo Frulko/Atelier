@@ -7,6 +7,7 @@ Three commands. All three must be green before a commit.
 | `npm run check` | `orchestrator/` | Type-checks the TypeScript (`tsc --noEmit`) | Node |
 | `npm test` | `orchestrator/` | Unit and HTTP integration tests (`node --test`), in-memory database | Node |
 | `npm run check` · `npm test` · `npm run build` | `web/` | Type-checks, runs the unit tests (formatting, roles, wording) and builds the web application | Node |
+| `./scripts/prod-test.sh` | repo root | Starts `docker-compose.prod.yml` with locally built images and checks it becomes healthy, serves the app and accepts the first sign-in | Docker |
 | `./scripts/smoke.sh` | repo root | End-to-end test of the whole stack in Docker, **no AI, no API key**. Also drives the web UI in a browser when Playwright is installed | Docker (+ `pip install playwright` and Chrome for the UI part) |
 
 ## What is covered
@@ -35,6 +36,8 @@ Three commands. All three must be green before a commit.
 | Project AI configuration: validated and clearable settings (admin only), instructions given to the assistant's prompt and the agent's settings, the repository's AI files read from a real git repo through an **allow-list** (traversal, deeper paths, other files refused; viewers and other organizations refused), the editor creating missing parent folders safely | `ai-config.test.ts`; the agent receiving the instructions end to end in `smoke.sh` |
 | Project status: health (ok, 5xx, redirect not followed, timeout, refused), **SSRF guards** (metadata and link-local always refused, private only when allowed, literal IPs), last commit read from a real git repository, uptime and retention, isolation, rate limit | `status.test.ts`, `health-private.test.ts` |
 | Editor sessions and files: hostile paths (`..`, absolute, `.git`, backslash, NUL), **symlinks never followed** (a planted link to a host file cannot be read, written or traversed), binary and oversized files, workspace quota, privacy (even admins get 404), role, per-organization limit, expiry and orphan cleanup, opening a real task branch, **diff and commit on a real repository** (author is the person, platform is the committer, `main` untouched, protected paths flagged, a branch that moved elsewhere is refused and never forced, task proposals accumulate files), no file content in the audit log, quick open (subsequence match, links and `.git` skipped, capped) | `editor.test.ts`; the sandboxed check and a commit end to end in `smoke.sh`, and the whole editor in a real browser (open a file, type, autosave, diff, check, commit, abandon) in `ui_check.py` |
+| Startup with no projects (Compose passes an empty `PROJECTS_JSON`), invalid and valid project lists | `config-env.test.ts` |
+| The production stack from built images: healthy, serves the app, first sign-in | `prod-test.sh` (also a CI stage) |
 | Task list filters, pagination bounds, literal text search, timing, retry | `tasks-api.test.ts` |
 | Audit log: what is recorded, who reads it, filters, CSV, **no secret ever in it** | `audit.test.ts` |
 | Dashboard and usage statistics: exact totals, no gaps, windows, roles, isolation | `stats.test.ts` |

@@ -7,3 +7,6 @@
 web/dist
 docs
 fixtures
+.github
+.dev-shots
+.claude

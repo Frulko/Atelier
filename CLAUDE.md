@@ -18,6 +18,8 @@ Run from `orchestrator/` unless noted.
 | `./scripts/smoke.sh` (repo root) | End-to-end test in Docker, no AI and no API key. Also drives the UI in a browser if Playwright is installed (`pip install playwright`) |
 | `./scripts/demo.sh` (repo root) | Local demo with three fake projects |
 | `python3 scripts/screenshots.py` (repo root) | Retake the README screenshots from a running demo, into `docs/img/*.jpg` |
+| `./scripts/prod-test.sh` (repo root) | Build the images locally and check that `docker-compose.prod.yml` starts healthy |
+| `./scripts/release.sh <repo> <version> [--push]` | Build (and publish, multi-arch) the orchestrator and sandbox images |
 | `./scripts/diagrams.sh` (repo root) | Regenerate `docs/img/*.png` and `*.svg` from `docs/diagrams/*.html` |
 
 **Definition of done: `npm run check`, `npm test` and `./scripts/smoke.sh` are all green — and, when `web/` changed, so are its `npm run check`, `npm test` and `npm run build`.** Never commit when one fails, and never skip hooks or checks to get a commit through.
@@ -32,7 +34,8 @@ Run from `orchestrator/` unless noted.
   - Body (when the change is not obvious): wrap at about 72 columns and explain **why**, not only what.
   - Breaking changes: `feat(scope)!:` and a `BREAKING CHANGE:` footer.
 - **One commit per validated step.** Keep unrelated changes (code, docs, tooling) in separate commits.
-- No force-push, no history rewriting once a branch is shared. The repository has no remote yet.
+- No force-push, no history rewriting once a branch is shared.
+- **CI/CD** is `.github/workflows/pipeline.yml` (checks, smoke, production stack, multi-arch images on ghcr.io, release on `vX.Y.Z` tags). Keep it in step with the definition of done: anything you add to `smoke.sh` or `prod-test.sh` runs there.
 
 ## Documentation
 

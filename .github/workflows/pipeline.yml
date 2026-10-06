@@ -1,0 +1,119 @@
+# Intégration et livraison continues, dans l'ordre :
+#   1. contrôles   : types, tests, compilation de l'interface          (à chaque push et pull request)
+#   2. smoke       : toute la pile dans Docker, interface pilotée dans un navigateur, sans IA ni clé
+#   3. pile prod   : docker-compose.prod.yml démarre avec les images construites ici
+#   4. images      : orchestrateur + bac à sable, multi-architecture ; PUBLIÉES sur ghcr.io seulement hors pull request
+#                    · push sur main  → :edge        · étiquette v1.2.3 → :1.2.3, :1.2 et :latest
+#   5. release     : une étiquette vX.Y.Z crée la release GitHub (notes générées)
+# Aucun secret à créer : GITHUB_TOKEN suffit. Rendre les paquets publics une fois : GitHub → Packages → Package settings → Change visibility.
+name: pipeline
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: pipeline-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+permissions:
+  contents: read
+
+jobs:
+  orchestrator:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm, cache-dependency-path: orchestrator/package-lock.json }
+      - run: npm ci && npm run check && npm test
+        working-directory: orchestrator
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm, cache-dependency-path: web/package-lock.json }
+      - run: npm ci && npm run check && npm test && npm run build
+        working-directory: web
+
+  smoke:
+    needs: [orchestrator, web]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install playwright   # le navigateur est le Chrome déjà présent sur le runner
+      - run: ./scripts/smoke.sh
+
+  stack:
+    needs: [orchestrator, web]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./scripts/prod-test.sh
+
+  images:
+    needs: [smoke, stack]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - { name: atelier, context: ".", file: orchestrator/Dockerfile }
+          - { name: atelier-sandbox, context: sandbox, file: sandbox/Dockerfile }
+    env:
+      PUBLISH: ${{ github.event_name != 'pull_request' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - if: env.PUBLISH == 'true'
+        uses: docker/login-action@v3
+        with: { registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.name }}
+          tags: |
+            type=edge,branch=main
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=ref,event=pr
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          platforms: linux/amd64,linux/arm64
+          push: ${{ env.PUBLISH == 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            ATELIER_VERSION=${{ steps.meta.outputs.version }}
+            ATELIER_SOURCE=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            docker-compose.prod.yml
+            .env.example
