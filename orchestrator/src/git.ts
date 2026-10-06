@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -225,4 +225,15 @@ export async function pushBranch(p: Project, ws: Workspace, branch: string): Pro
     if (/non-fast-forward|fetch first|rejected|stale info/i.test(text)) throw Object.assign(new Error("la branche a changé sur le dépôt depuis l'ouverture de l'éditeur : abandonne cette édition et rouvre-la"), { code: "NOT_FAST_FORWARD" });
     throw new Error(text.split("\n").filter(Boolean).slice(-1)[0]?.slice(0, 200) ?? "envoi refusé");
   }
+}
+
+/**
+ * Dépôts LOCAUX (démo et tests seulement) : sur Linux, le dossier monté appartient à un autre utilisateur que celui du conteneur et git
+ * refuse alors de le lire (« dubious ownership »). Git n'honore safe.directory que dans la configuration globale ou système, pas dans
+ * les variables d'environnement : on l'écrit dans la configuration globale du conteneur, et seulement quand les dépôts locaux sont permis.
+ */
+export function trustLocalRepos() {
+  if (!cfg.allowLocalRepos) return;
+  const has = (() => { try { return execFileSync("git", ["config", "--global", "--get-all", "safe.directory"], { encoding: "utf8" }).split("\n").includes("*"); } catch { return false; } })();
+  if (!has) execFileSync("git", ["config", "--global", "--add", "safe.directory", "*"]);
 }

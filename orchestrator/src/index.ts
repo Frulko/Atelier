@@ -5,7 +5,9 @@ import { startProxy } from "./proxy.ts";
 import { createApp } from "./app.ts";
 import { startMonitor } from "./monitor.ts";
 import { sweepEditor } from "./editor.ts";
+import { trustLocalRepos } from "./git.ts";
 
+trustLocalRepos();
 failOrphans();
 purgeExpiredSessions();
 await bootstrapOwner();

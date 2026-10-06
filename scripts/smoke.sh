@@ -5,6 +5,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 S="$PWD/.smoke"; rm -rf "$S"; mkdir -p "$S/work"
 scripts/fixtures.sh "$S/fixtures"
+# Sous Linux, le conteneur (root) pousse dans ces dépôts : ils changent de propriétaire et le git de l'hôte refuserait de les lire
+# (« dubious ownership »). Une configuration globale PROPRE À CE TEST (pas celle de l'utilisateur) les déclare sûrs.
+export GIT_CONFIG_GLOBAL="$S/gitconfig"; git config --file "$GIT_CONFIG_GLOBAL" --add safe.directory '*'
 
 cat > "$S/.env" <<ENV
 ATELIER_PASSWORD=smoke
