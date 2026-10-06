@@ -309,6 +309,8 @@ with sync_playwright() as p:
     admin.get_by_label("Plafond mensuel (en $)").fill("50")
     admin.get_by_role("button", name="Enregistrer").click()
     expect(admin.get_by_text("/ 50,00 $")).to_be_visible()
+    expect(admin.get_by_test_id("chat-usage")).to_contain_text("Réponses")                  # chat usage, in tokens
+    expect(admin.get_by_test_id("chat-usage")).not_to_contain_text("0 Tokens lus")
     shot(admin, "09-usage")
     admin.get_by_role("button", name="Supprimer le plafond").click()
     expect(admin.get_by_text("Aucun plafond")).to_be_visible()
@@ -329,6 +331,11 @@ with sync_playwright() as p:
 
     # ----------------------------------------------------------- organization
     nav(admin, "Organisation")
+    admin.get_by_label("Modèle", exact=True).fill("modele-de-test-1")                      # the assistant's model, per organization
+    admin.get_by_role("button", name="Appliquer").click()
+    expect(admin.get_by_text("Assistant enregistré.")).to_be_visible()
+    admin.reload()
+    expect(admin.get_by_label("Modèle", exact=True)).to_have_value("modele-de-test-1")
     name_box = admin.get_by_label("Nom de l'organisation")
     original = name_box.input_value()
     name_box.fill(f"{original} bis")

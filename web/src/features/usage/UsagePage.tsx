@@ -80,6 +80,11 @@ export function UsagePage() {
       </div>
 
       <div className="grid gap-8 xl:grid-cols-3">
+        <Section title="Discussions avec l'assistant" hint="Comptées en tokens (le plafond mensuel porte sur le coût des tâches)." index={4}>
+          <Card className="grid grid-cols-3 gap-4 p-5 text-sm" data-testid="chat-usage">
+            {d ? ([["Réponses", d.chat.replies], ["Tokens lus", d.chat.input], ["Tokens écrits", d.chat.output]] as const).map(([k, v]) => <div key={k}><p className="label">{k}</p><p className="tnum mt-1 text-xl font-semibold">{v.toLocaleString("fr-FR")}</p></div>) : <Skeleton className="col-span-3 h-12" />}
+          </Card>
+        </Section>
         <Section title="Par membre" index={5}><Card className="p-5">
           <HBars empty="Aucune activité sur la période." rows={(d?.byMember ?? []).map((m) => ({ key: m.userId, label: <span className="flex items-center gap-2"><Avatar name={m.email} size={22} />{m.email}</span>, value: m.spendUsd, display: fmtUsd(m.spendUsd), sub: `${m.tasks} tâche${m.tasks > 1 ? "s" : ""} · ${m.done} réussie${m.done > 1 ? "s" : ""} · ${m.failed} échec${m.failed > 1 ? "s" : ""}` }))} />
         </Card></Section>

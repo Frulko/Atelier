@@ -6,10 +6,11 @@ import { Button } from "../../components/ui/Button";
 import { Card, PageHeader, Section } from "../../components/ui/Card";
 import { Dialog } from "../../components/ui/Dialog";
 import { FormError, Skeleton } from "../../components/ui/Feedback";
-import { Field, Input } from "../../components/ui/Field";
+import { Field, Input, Select } from "../../components/ui/Field";
 import { useToast } from "../../components/ui/Toast";
 import { api } from "../../lib/api";
 import { fmtUsd } from "../../lib/format";
+import { PROVIDER_LABEL } from "../../lib/labels";
 import { invalidateOrg, meQuery, orgQuery, queryClient, refreshMe } from "../../lib/queries";
 import { useOrg } from "../../lib/useOrg";
 
@@ -31,6 +32,33 @@ function DeleteDialog({ open, onClose, name }: { open: boolean; onClose: () => v
         <div className="flex justify-end gap-2"><Button onClick={() => { setTyped(""); onClose(); }}>Annuler</Button><Button variant="danger" type="submit" loading={del.isPending} disabled={typed !== name}>Supprimer définitivement</Button></div>
       </form>
     </Dialog>
+  );
+}
+
+/** Fournisseur et modèle de l'assistant de discussion : propres à l'organisation, la clé est celle de ses Intégrations. */
+function ChatSettings() {
+  const { orgId } = useOrg();
+  const toast = useToast();
+  const detail = useQuery(orgQuery(orgId));
+  const c = detail.data?.chat;
+  const [provider, setProvider] = useState<string | null>(null);
+  const [model, setModel] = useState<string | null>(null);
+  const save = useMutation({
+    mutationFn: () => api.patch(`/api/orgs/${orgId}`, { chatProvider: provider ?? c?.provider, chatModel: (model ?? c?.model ?? "").trim() }),
+    onSuccess: () => { invalidateOrg(orgId); invalidateOrg(orgId, "audit"); setProvider(null); setModel(null); toast("Assistant enregistré."); },
+  });
+  if (!c) return <Skeleton className="h-24" />;
+  const p = provider ?? c.provider, m = model ?? c.model;
+  return (
+    <form onSubmit={(e) => { e.preventDefault(); save.mutate(); }} className="grid gap-4">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Fournisseur">{(id) => <Select id={id} value={p} onChange={(e) => setProvider(e.target.value)}>{c.providers.map((x) => <option key={x} value={x}>{PROVIDER_LABEL[x] ?? x}</option>)}</Select>}</Field>
+        <Field label="Modèle" hint="Identifiant chez le fournisseur.">{(id) => <Input id={id} value={m} maxLength={100} required onChange={(e) => setModel(e.target.value)} className="font-mono text-[13px]" />}</Field>
+      </div>
+      <p className="text-xs text-muted">L'assistant utilise la clé de ce fournisseur déclarée dans <Link to="/o/$orgId/integrations" params={{ orgId }} className="font-medium text-accent hover:underline">Intégrations</Link>. Les tâches de l'agent ont leur propre réglage.</p>
+      <FormError error={save.error} />
+      <div><Button variant="primary" type="submit" loading={save.isPending} disabled={provider === null && model === null}>Appliquer</Button></div>
+    </form>
   );
 }
 
@@ -65,6 +93,10 @@ export function OrgSettingsPage() {
               <p className="text-xs text-muted">Utile pour échanger avec le support.</p>
             </div>
           </Card>
+        </Section>
+
+        <Section title="Assistant de discussion" index={2}>
+          <Card className="p-6"><ChatSettings /></Card>
         </Section>
 
         <Section title="Budget des modèles" index={2}>

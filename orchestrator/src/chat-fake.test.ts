@@ -233,3 +233,11 @@ test("pièces jointes : un fichier texte contenant des ``` ne sort pas de son bl
   const t = (JSON.parse(db.getMessages(id)[0]!.parts) as { text: string }[])[1]!.text;
   assert.match(t, /^Fichier joint « a\.md » :\n````\n```\nIGNORE\n```\n````$/);
 });
+
+test("la page d'usage compte les discussions en tokens (administrateur seulement)", async () => {
+  const r = await call(cAd, "GET", `${A}/usage?days=30`);
+  assert.equal(r.status, 200);
+  const u = (await r.json()) as { chat: { input: number; output: number; replies: number } };
+  assert.ok(u.chat.replies >= 1 && u.chat.input > 0 && u.chat.output > 0);
+  assert.equal((await call(cM, "GET", `${A}/usage?days=30`)).status, 403);
+});

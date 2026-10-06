@@ -40,7 +40,7 @@ Atelier is configured through environment variables (see [`.env.example`](../.en
 
 ### Assistant and monitoring
 
-The discussion assistant uses the model **of the organization**: provider (`anthropic`, `openai`, `openrouter`) and model are set per organization through `PATCH /api/orgs/:org { chatProvider, chatModel }` (default Anthropic, `claude-sonnet-5-5`; no page for it yet) and the key is the organization's own provider-key secret. Without a key the chat answers with a clear error. With `ATELIER_FAKE_AGENT=1` a deterministic fake model answers instead.
+The discussion assistant uses the model **of the organization**: provider (`anthropic`, `openai`, `openrouter`) and model are set per organization on the **Organisation** page (or `PATCH /api/orgs/:org { chatProvider, chatModel }`; default Anthropic, `claude-sonnet-5-5`) and the key is the organization's own provider-key secret. Without a key the chat answers with a clear error. With `ATELIER_FAKE_AGENT=1` a deterministic fake model answers instead.
 
 Each project may have a **site address** and a **health address** (Projects → Edit). The monitor tests it every minute and reads the base branch's last commit every five minutes. See `ATELIER_HEALTH_ALLOW_PRIVATE` above for internal addresses.
 

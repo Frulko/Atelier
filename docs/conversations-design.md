@@ -1,6 +1,6 @@
 # Conversations, knowledge and the guided tour
 
-**Status:** phases 1 to 4 have shipped (knowledge, discussions with attachments, tasks as conversations, tour and guide); phase 5 is this documentation. Remaining: a settings page for the assistant's provider and model, token totals on the usage page.
+**Status:** phases 1 to 4 have shipped (knowledge, discussions with attachments, tasks as conversations, tour and guide); phase 5 is this documentation. The assistant's provider and model are set on the Organisation page, and the usage page shows chat tokens.
 
 Until now a *task* was a form: you wrote a request, then watched a log. This design makes the **conversation window** the centre of the product, adds a **knowledge base** that both the assistant and the agent read, and adds a **guided tour** that walks a newcomer through a realistic use case.
 

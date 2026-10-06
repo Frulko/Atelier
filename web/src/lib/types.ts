@@ -40,9 +40,10 @@ export interface Usage {
   perDay: DayPoint[]; byProject: ProjectStat[];
   byMember: { userId: string; email: string; tasks: number; done: number; failed: number; spendUsd: number }[];
   byProvider: { provider: string; calls: number; errors: number }[];
+  chat: { input: number; output: number; replies: number };
   budget: { capUsd: number | null; monthSpendUsd: number; projectedMonthUsd: number };
 }
-export interface OrgDetail { id: string; name: string; budgetUsdMonth: number | null; monthSpendUsd: number }
+export interface OrgDetail { id: string; name: string; budgetUsdMonth: number | null; monthSpendUsd: number; chat: { provider: string; model: string; providers: string[] } }
 
 export interface AuditItem {
   id: number; ts: number; action: string; userId: string | null; userEmail: string | null;

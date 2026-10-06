@@ -16,7 +16,7 @@ import { hashInviteToken, INVITE_TTL_MS, newInviteToken } from "./invites.ts";
 import { cancel, newId } from "./pipeline.ts";
 import { securityHeaders, serveStatic } from "./static.ts";
 import { followUp, MAX_TURNS, startTask } from "./start.ts";
-import { projectStatuses } from "./db.ts";
+import { chatTokens, projectStatuses } from "./db.ts";
 import { refreshProject } from "./monitor.ts";
 import { cleanAttachments, MAX_BODY_BYTES } from "./attachments.ts";
 import { CHAT_PROVIDERS, effectiveChat, MAX_MESSAGE_CHARS, MAX_MESSAGES, runChat, textOf, toUIMessage } from "./chat.ts";
@@ -308,7 +308,9 @@ export function createApp() {
           const a = gate(kind === "stats" ? "task:read" : "org:budget");
           if (typeof a === "string") return deny(a);
           const days = Number(url.searchParams.get("days"));
-          return json(res, 200, kind === "stats" ? orgStats(orgId, days) : orgUsage(orgId, days));
+          if (kind === "stats") return json(res, 200, orgStats(orgId, days));
+          const usage = orgUsage(orgId, days);
+          return json(res, 200, { ...usage, chat: chatTokens(orgId, usage.range.from, usage.range.to) }); // les discussions se comptent en tokens, pas en dollars
         }
 
         // ---------------- journal d'audit (lecture seule, administrateurs)
