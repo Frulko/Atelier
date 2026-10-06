@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link, Outlet, useNavigate } from "@tanstack/react-router";
+import { Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import clsx from "clsx";
 import { BarChart3, BookOpen, CircleHelp, FolderGit2, MessagesSquare, LayoutDashboard, ListChecks, LogOut, Menu, Plug, ScrollText, Settings, Users, X, type LucideIcon } from "lucide-react";
 import { useState } from "react";
@@ -74,6 +74,8 @@ function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
 
 export function AppShell() {
   const [menu, setMenu] = useState(false);
+  // l'éditeur prend toute la largeur ; les autres pages grandissent par paliers sur les très grands écrans au lieu de rester étroites au milieu
+  const wide = useRouterState({ select: (s) => /\/projects\/[^/]+\/editor$/.test(s.location.pathname) });
   return (
     <TourProvider>
     <div className="min-h-screen lg:grid lg:grid-cols-[16.5rem_1fr]">
@@ -93,7 +95,7 @@ export function AppShell() {
           <Logo className="size-7 lg:hidden" />
           <Breadcrumbs />
         </header>
-        <main className="min-w-0 px-5 py-8 sm:px-8 lg:px-12 lg:py-10"><div className="mx-auto max-w-[72rem]"><Outlet /></div></main>
+        <main className="min-w-0 px-5 py-8 sm:px-8 lg:px-12 lg:py-10"><div className={clsx("mx-auto", wide ? "max-w-none" : "max-w-[72rem] min-[1700px]:max-w-[88rem] min-[2200px]:max-w-[104rem]")}><Outlet /></div></main>
       </div>
     </div>
     </TourProvider>
