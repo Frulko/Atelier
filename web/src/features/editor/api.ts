@@ -12,7 +12,7 @@ export const editorApi = {
   discard: (org: string, id: string) => api.del(base(org, id)),
   tree: (org: string, id: string, path: string) => api.get<{ entries: Entry[]; truncated: boolean }>(`${base(org, id)}/tree?path=${encodeURIComponent(path)}`),
   read: (org: string, id: string, path: string) => api.get<{ path: string; content: string; size: number }>(`${base(org, id)}/file?path=${encodeURIComponent(path)}`),
-  save: (org: string, id: string, path: string, content: string) => api.put<{ path: string; size: number }>(`${base(org, id)}/file`, { path, content }),
+  save: (org: string, id: string, path: string, content: string, parents = false) => api.put<{ path: string; size: number }>(`${base(org, id)}/file`, { path, content, ...(parents ? { parents: true } : {}) }),
   op: (org: string, id: string, body: { op: "create"; path: string; type: "file" | "dir" } | { op: "rename"; from: string; to: string } | { op: "delete"; path: string }) => api.post(`${base(org, id)}/files`, body),
   search: (org: string, id: string, q: string) => api.get<{ paths: string[]; truncated: boolean }>(`${base(org, id)}/search?q=${encodeURIComponent(q)}`),
   changes: (org: string, id: string) => api.get<Changes>(`${base(org, id)}/diff`),

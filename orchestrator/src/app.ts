@@ -1,7 +1,7 @@
 import http from "node:http";
 import { countConversationsOf, countMessages, deleteConversation, getConversationFor, getMessages, insertConversation, listConversations, setConversationTitle, setOrgChat, type ConversationRow, countKnowledge, deleteKnowledge, getKnowledge, insertKnowledge, listKnowledge, updateKnowledge, secretUsers, updateSecret, listSessions, deleteSessionByPrefix, setUserName, renameOrg, activeTaskCount, deleteOrgCascade, orgStats, orgUsage, queryAudit, userActivity, getUserById, STATUSES, queryTasks, getTaskDetail, type Status, addEvent, addMember, bus, consumeInvitation, countOrgsOf, countOwners, createOrg, createUser, deleteInvitation, findInvitation, insertInvitation, listInvitations, listMembers, removeMember, setMemberRole, createTask, getOrg, monthSpend, setOrgBudget, deleteProject, deleteSecret, getEvents, getProjectInOrg, getSecretRow, getTask, getTaskInOrg, getUserByEmail, insertProject, listProjects, listSecrets, listTasks, orgsOf, roleOf, secretInUse, updatePassword, updateProject, updateTask, type Evt, type Role, type User } from "./db.ts";
 import { rotateSecret, storeSecret } from "./vault.ts";
-import { verifyAccess } from "./git.ts";
+import { AI_FILE, repoAiFile, repoAiFiles, verifyAccess } from "./git.ts";
 import { rowToProject } from "./projects.ts";
 import { KNOWLEDGE_BUDGET, MAX_ITEMS, selectKnowledge, validateKnowledge } from "./knowledge.ts";
 import { audit, auditToCsv } from "./audit.ts";
@@ -281,7 +281,7 @@ export function createApp() {
             if (sub === "tree" && req.method === "GET") return json(res, 200, await listDir(s, safeRel(url.searchParams.get("path") ?? "", { allowRoot: true })));
             if (sub === "search" && req.method === "GET") return json(res, 200, await findFiles(s, url.searchParams.get("q") ?? ""));
             if (sub === "file" && req.method === "GET") return json(res, 200, await readText(s, safeRel(url.searchParams.get("path"))));
-            if (sub === "file" && req.method === "PUT") { const b = await body(req, 1_600_000); return json(res, 200, await writeText(s, safeRel(b.path), b.content)); }
+            if (sub === "file" && req.method === "PUT") { const b = await body(req, 1_600_000); return json(res, 200, await writeText(s, safeRel(b.path), b.content, { parents: b.parents === true })); }
             if (sub === "diff" && req.method === "GET") { const q = url.searchParams.get("path"); return json(res, 200, await changesOf(s, q ? safeRel(q) : undefined)); }
             if (sub === "check" && req.method === "POST") { const r = await runSessionCheck(s); log("editor.check", { type: "project", id: s.project_id }, { ok: r.ok }); return json(res, 200, r); }
             if (sub === "commit" && req.method === "POST") {
@@ -299,7 +299,7 @@ export function createApp() {
         return void res.writeHead(404).end();
       }
 
-      const o = /^\/api\/orgs\/([0-9a-f]{16})\/(projects|tasks|secrets|members|invitations|audit|stats|usage|knowledge|conversations|status)(?:\/([0-9a-f]{8,16}|preview))?(\/events|\/cancel|\/retry|\/verify|\/chat|\/messages|\/refresh)?$/.exec(url.pathname);
+      const o = /^\/api\/orgs\/([0-9a-f]{16})\/(projects|tasks|secrets|members|invitations|audit|stats|usage|knowledge|conversations|status)(?:\/([0-9a-f]{8,16}|preview))?(\/events|\/cancel|\/retry|\/verify|\/chat|\/messages|\/refresh|\/ai-files|\/ai-file)?$/.exec(url.pathname);
       if (o) {
         const [, orgId, kind, itemId, sub] = o;
         const deny = (a: Access) => a === "not_found" ? json(res, 404, { error: "introuvable" }) : json(res, 403, { error: "droits insuffisants" });
@@ -449,6 +449,23 @@ export function createApp() {
           return json(res, 200, statusJson(projectStatuses(orgId).find((s) => s.row.id === itemId)!));
         }
 
+        // ---------------- fichiers de configuration de l'IA du dépôt (CLAUDE.md, AGENTS.md, règles, skills, sous-agents)
+        if (kind === "projects" && itemId && (sub === "/ai-files" || sub === "/ai-file") && req.method === "GET") {
+          const a = gate("task:create"); // le contenu du dépôt n'est pas pour les lecteurs
+          if (typeof a === "string") return deny(a);
+          const row = getProjectInOrg(itemId, orgId);
+          if (!row) return json(res, 404, { error: "introuvable" });
+          if (refreshLimiter.blocked(`refresh:${orgId}`)) return json(res, 429, { error: "trop de lectures du dépôt, réessaie dans un instant" });
+          refreshLimiter.fail(`refresh:${orgId}`);
+          try {
+            if (sub === "/ai-files") return json(res, 200, { files: await repoAiFiles(rowToProject(row), row.id) });
+            const path = url.searchParams.get("path") ?? "";
+            if (!AI_FILE.test(path)) return json(res, 400, { error: "fichier non autorisé" });
+            const content = await repoAiFile(rowToProject(row), row.id, path);
+            return content === null ? json(res, 404, { error: "introuvable" }) : json(res, 200, { path, content });
+          } catch (e: any) { return json(res, 502, { error: `dépôt injoignable : ${e.message}` }); }
+        }
+
         if (kind === "projects") {
           if (req.method === "GET" && !itemId) {
             const a = gate("task:read");
@@ -485,7 +502,7 @@ export function createApp() {
               if (!v.ok) return json(res, 400, { error: v.error });
               const f = v.value;
               if (f.gitSecretId && getSecretRow(f.gitSecretId, orgId)?.kind !== "git_token") return json(res, 400, { error: "secret git introuvable" });
-              const patch: Record<string, string | null> = {};
+              const patch: Record<string, string | number | null> = {};
               if (f.slug !== undefined) patch.slug = f.slug;
               if (f.name !== undefined) patch.name = f.name;
               if (f.repo !== undefined) patch.repo = f.repo;
@@ -497,6 +514,10 @@ export function createApp() {
               if (f.gitSecretId !== undefined) patch.git_secret_id = f.gitSecretId;
               if (f.siteUrl !== undefined) patch.site_url = f.siteUrl;
               if (f.healthUrl !== undefined) patch.health_url = f.healthUrl;
+              if (f.instructions !== undefined) patch.instructions = f.instructions;
+              if (f.agentModel !== undefined) patch.agent_model = f.agentModel;
+              if (f.agentMaxTurns !== undefined) patch.agent_max_turns = f.agentMaxTurns;
+              if (f.agentBudgetUsd !== undefined) patch.agent_budget_usd = f.agentBudgetUsd;
               try { updateProject(itemId, orgId, patch); } catch (e) {
                 if (!/UNIQUE/.test(String(e))) throw e;
                 return json(res, 409, { error: "ce slug existe déjà" });

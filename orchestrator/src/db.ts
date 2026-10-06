@@ -122,6 +122,10 @@ db.exec("create index if not exists tasks_org on tasks(org_id, created_at)");
 const projectCols = (db.prepare("pragma table_info(projects)").all() as { name: string }[]).map((c) => c.name);
 if (!projectCols.includes("site_url")) db.exec("alter table projects add column site_url text");
 if (!projectCols.includes("health_url")) db.exec("alter table projects add column health_url text");
+if (!projectCols.includes("instructions")) db.exec("alter table projects add column instructions text");
+if (!projectCols.includes("agent_model")) db.exec("alter table projects add column agent_model text");
+if (!projectCols.includes("agent_max_turns")) db.exec("alter table projects add column agent_max_turns integer");
+if (!projectCols.includes("agent_budget_usd")) db.exec("alter table projects add column agent_budget_usd real");
 if (!(db.prepare("pragma table_info(editor_sessions)").all() as { name: string }[]).some((c) => c.name === "mr_url") && (db.prepare("pragma table_info(editor_sessions)").all() as unknown[]).length) db.exec("alter table editor_sessions add column mr_url text");
 db.exec(`
   -- Dernier état connu de chaque projet (santé, dernier commit, déploiement) et historique de santé (7 jours).
@@ -366,6 +370,8 @@ export type ProjectRow = {
   check_cmd: string; engine: string; protected_paths: string; git_secret_id: string | null; created_at: number;
   /** Adresse publique du site et adresse testée pour la santé (par défaut la même). */
   site_url?: string | null; health_url?: string | null;
+  /** Configuration de l'IA du projet : instructions ajoutées par l'équipe, modèle, tours maximum, budget par exécution (null = valeurs par défaut). */
+  instructions?: string | null; agent_model?: string | null; agent_max_turns?: number | null; agent_budget_usd?: number | null;
 };
 
 export function insertProject(p: Omit<ProjectRow, "id" | "created_at">): string {

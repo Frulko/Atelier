@@ -14,6 +14,8 @@ import { useOrg } from "../../lib/useOrg";
 import { editorApi, type FileChange } from "./api";
 import { FileTree } from "./FileTree";
 import { QuickOpen } from "./QuickOpen";
+import { TEMPLATES, type TemplateKey } from "../projects/aiTemplates";
+import { ApiError } from "../../lib/api";
 import { languageOf, monaco } from "./monaco";
 
 const route = getRouteApi("/o/$orgId/projects/$projectId/editor");
@@ -38,7 +40,7 @@ function Patch({ text }: { text: string }) {
 export function EditorPage() {
   const { orgId } = useOrg();
   const { projectId } = route.useParams();
-  const { task } = route.useSearch() as { task?: string };
+  const { task, open: openPath, template } = route.useSearch() as { task?: string; open?: string; template?: TemplateKey };
   const navigate = useNavigate();
   const toast = useToast();
   const qc = useQueryClient();
@@ -113,6 +115,22 @@ export function EditorPage() {
     }
     ed.current?.setModel(t.model); setActive(path); ed.current?.focus();
   }, [orgId, sid, schedule, toast]);
+
+  // Arrivée depuis « IA » : ouvrir le fichier demandé, et le créer depuis son modèle s'il n'existe pas encore.
+  const opened = useRef(false);
+  useEffect(() => {
+    if (!sid || !openPath || opened.current) return;
+    opened.current = true;
+    void (async () => {
+      try { await editorApi.read(orgId, sid, openPath); }
+      catch (e) {
+        if (!(e instanceof ApiError && e.status === 404) || !template) { toast(errorText(e), "bad"); return; }
+        const name = openPath.split("/").slice(-1)[0] === "SKILL.md" ? openPath.split("/").slice(-2)[0]! : openPath.split("/").slice(-1)[0]!.replace(/\.md$/, "");
+        try { await editorApi.save(orgId, sid, openPath, TEMPLATES[template](name), true); refreshChanges(); } catch (er) { toast(errorText(er), "bad"); return; }
+      }
+      void openFile(openPath);
+    })();
+  }, [sid, openPath, template, orgId, openFile, refreshChanges, toast]);
 
   const closeTab = useCallback(async (path: string) => {
     if (dirty.has(path)) { clearTimeout(timers.current[path]); await persist(path); }

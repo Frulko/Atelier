@@ -123,20 +123,44 @@ export type LatestCommit = { sha: string; subject: string; author: string; at: n
  * Dernier commit de la branche de base, SANS cloner tout le dépôt : un dépôt nu de travail (hors du dossier des tâches) où l'on
  * ne récupère que le sommet de la branche (profondeur 1). Les hooks sont neutralisés comme partout, le jeton passe par l'environnement.
  */
-export async function latestCommit(p: Project, id: string): Promise<LatestCommit> {
+async function fetchBase(p: Project, id: string): Promise<(args: string[]) => Promise<string>> {
   const dir = join(cfg.workDir, "_status", `${id}.git`);
   await mkdir(dir, { recursive: true });
   const env = gitEnv(p.token, p.forge);
-  const g = (args: string[]) => run("git", ["--git-dir", dir, ...args], { env, timeout: 30_000, maxBuffer: 1e6 }).then((r) => r.stdout.trim());
+  const g = (args: string[]) => run("git", ["--git-dir", dir, ...args], { env, timeout: 30_000, maxBuffer: 2e6 }).then((r) => r.stdout);
+  await g(["rev-parse", "--git-dir"]).catch(() => g(["init", "--bare", "--quiet"]));
+  await g(["fetch", "--quiet", "--depth", "1", "--no-tags", "--", p.repo, `+refs/heads/${p.branch}:refs/heads/base`]);
+  return g;
+}
+const lastLine = (e: any, p: Project) => scrub(String(e.stderr || e.message || "dépôt injoignable"), [p.token]).split("\n").filter(Boolean).slice(-1)[0]!.slice(0, 200);
+
+export async function latestCommit(p: Project, id: string): Promise<LatestCommit> {
   try {
-    await g(["rev-parse", "--git-dir"]).catch(() => g(["init", "--bare", "--quiet"]));
-    await g(["fetch", "--quiet", "--depth", "1", "--no-tags", "--", p.repo, `+refs/heads/${p.branch}:refs/heads/base`]);
-    const out = await g(["log", "-1", "--format=%H%x1f%s%x1f%an%x1f%ct", "refs/heads/base"]);
+    const g = await fetchBase(p, id);
+    const out = (await g(["log", "-1", "--format=%H%x1f%s%x1f%an%x1f%ct", "refs/heads/base"])).trim();
     const [sha = "", subject = "", author = "", ct = "0"] = out.split("\x1f");
     return { sha, subject: subject.slice(0, 200), author: author.slice(0, 100), at: Number(ct) * 1000 };
-  } catch (e: any) {
-    throw new Error(scrub(String(e.stderr || e.message || "dépôt injoignable"), [p.token]).split("\n").filter(Boolean).slice(-1)[0]!.slice(0, 200));
-  }
+  } catch (e: any) { throw new Error(lastLine(e, p)); }
+}
+
+/** Les fichiers de configuration de l'IA (CLAUDE.md, AGENTS.md, règles, skills, sous-agents) de la branche de base, ou leur contenu. Rien d'autre n'est lisible par ici. */
+export const AI_FILE = /^(CLAUDE\.md|AGENTS\.md|\.claude\/rules\/[^/]+\.md|\.claude\/skills\/[^/]+\/SKILL\.md|\.claude\/agents\/[^/]+\.md)$/;
+export async function repoAiFiles(p: Project, id: string): Promise<{ path: string; size: number }[]> {
+  try {
+    const g = await fetchBase(p, id);
+    const out = await g(["ls-tree", "-r", "-l", "-z", "refs/heads/base"]);
+    return out.split("\0").filter(Boolean).map((l) => /^\d+ blob [0-9a-f]+\s+(\d+)\t(.+)$/.exec(l)).filter((m): m is RegExpExecArray => !!m && AI_FILE.test(m[2]!)).map((m) => ({ path: m[2]!, size: Number(m[1]) })).sort((a, b) => a.path.localeCompare(b.path));
+  } catch (e: any) { throw new Error(lastLine(e, p)); }
+}
+export async function repoAiFile(p: Project, id: string, path: string): Promise<string | null> {
+  if (!AI_FILE.test(path)) throw new Error("fichier non autorisé");
+  try {
+    const g = await fetchBase(p, id);
+    const size = Number((await g(["cat-file", "-s", `refs/heads/base:${path}`]).catch(() => "-1")).trim());
+    if (size < 0) return null;
+    if (size > 100_000) throw new Error("fichier trop gros pour l'aperçu");
+    return await g(["show", `refs/heads/base:${path}`]);
+  } catch (e: any) { throw new Error(lastLine(e, p)); }
 }
 
 export type LatestDeploy = { environment: string; status: string; ref: string | null; sha: string | null; at: number; url: string | null };

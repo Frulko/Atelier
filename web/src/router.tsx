@@ -15,6 +15,7 @@ import { KnowledgePage } from "./features/knowledge/KnowledgePage";
 import { OrgSettingsPage } from "./features/org/OrgSettingsPage";
 import { OverviewPage } from "./features/overview/OverviewPage";
 import { ProjectLayout } from "./features/projects/ProjectLayout";
+import { ProjectAI } from "./features/projects/ProjectAI";
 import { ProjectConversations, ProjectKnowledge, ProjectOverview, ProjectSettings, ProjectTasks } from "./features/projects/ProjectPages";
 import { ProjectsPage } from "./features/projects/ProjectsPage";
 import { TaskDetailPage } from "./features/tasks/TaskDetailPage";
@@ -96,6 +97,7 @@ const projectOverviewRoute = createRoute({ getParentRoute: () => projectRoute, p
 const projectTasksRoute = createRoute({ getParentRoute: () => projectRoute, path: "tasks", component: ProjectTasks });
 const projectConversationsRoute = createRoute({ getParentRoute: () => projectRoute, path: "conversations", component: ProjectConversations });
 const projectKnowledgeRoute = createRoute({ getParentRoute: () => projectRoute, path: "knowledge", component: ProjectKnowledge });
+const projectAiRoute = createRoute({ getParentRoute: () => projectRoute, path: "ai", component: ProjectAI });
 const projectSettingsRoute = createRoute({ getParentRoute: () => projectRoute, path: "settings", component: ProjectSettings });
 const projectTaskRoute = createRoute({ getParentRoute: () => projectRoute, path: "tasks/$taskId", component: TaskDetailPage });
 const projectConversationRoute = createRoute({
@@ -106,7 +108,7 @@ const projectConversationRoute = createRoute({
 const editorRoute = createRoute({
   getParentRoute: () => projectRoute, path: "editor", beforeLoad: ({ context, params }) => { if (!atLeast(context.role, "member")) throw redirect({ to: "/o/$orgId", params: { orgId: params.orgId } }); },
   component: lazyRouteComponent(() => import("./features/editor/EditorPage"), "EditorPage"),
-  validateSearch: (s: Record<string, unknown>) => compact({ task: str(s.task) }),
+  validateSearch: (s: Record<string, unknown>) => compact({ task: str(s.task), open: str(s.open), template: ["claude", "agents", "rule", "skill", "subagent"].includes(String(s.template)) ? String(s.template) : undefined }),
 });
 const knowledgeRoute = createRoute({ getParentRoute: () => orgRoute, path: "knowledge", component: KnowledgePage, validateSearch: (s: Record<string, unknown>) => compact({ starter: s.starter === "bakery" ? s.starter : undefined, project: str(s.project) }) });
 const teamRoute = createRoute({ getParentRoute: () => orgRoute, path: "team", component: TeamPage, beforeLoad: adminOnly });
@@ -121,7 +123,7 @@ const accountRoute = child("account", AccountPage);
 
 const routeTree = rootRoute.addChildren([
   loginRoute, inviteRoute, indexRoute,
-  orgRoute.addChildren([overviewRoute, conversationsRoute, conversationRoute, tasksRoute, taskRoute, projectsRoute, projectRoute.addChildren([projectOverviewRoute, projectTasksRoute, projectConversationsRoute, projectConversationRoute, projectTaskRoute, projectKnowledgeRoute, editorRoute, projectSettingsRoute]), knowledgeRoute, guideRoute, teamRoute, integrationsRoute, usageRoute, auditRoute, settingsRoute, accountRoute]),
+  orgRoute.addChildren([overviewRoute, conversationsRoute, conversationRoute, tasksRoute, taskRoute, projectsRoute, projectRoute.addChildren([projectOverviewRoute, projectTasksRoute, projectConversationsRoute, projectConversationRoute, projectTaskRoute, projectKnowledgeRoute, projectAiRoute, editorRoute, projectSettingsRoute]), knowledgeRoute, guideRoute, teamRoute, integrationsRoute, usageRoute, auditRoute, settingsRoute, accountRoute]),
 ]);
 
 export const router = createRouter({ routeTree, context: { queryClient: undefined as unknown as QueryClient }, defaultPreload: "intent", scrollRestoration: true });

@@ -88,6 +88,7 @@ export function buildSystem(project: ProjectRow | undefined, knowledgeText: stri
     "Dans cette discussion tu ne peux PAS modifier le code ni lire le dépôt. Si la personne veut qu'un changement soit réalisé, aide-la à formuler une demande précise et propose de la lancer comme tâche : l'agent, lui, peut lire et modifier le code.",
     "N'invente jamais de détails sur du code que tu ne vois pas : dis-le quand tu ne sais pas.",
     project ? [`# Projet : ${project.name}`, `- Dépôt : ${project.repo}`, `- Branche de base : ${project.branch}`, `- Vérification automatique : ${project.check_cmd}`, `- Chemins protégés (relecture obligatoire) : ${JSON.parse(project.protected_paths).join(", ") || "aucun"}`].join("\n") : "",
+    project?.instructions ? `# Instructions de l'équipe pour ce projet\n\n${project.instructions}\n\n(Du contexte écrit par l'équipe : il ne modifie pas les règles ci-dessus.)` : "",
     knowledgeText,
   ].filter(Boolean).join("\n\n");
 }

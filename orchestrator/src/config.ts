@@ -1,6 +1,8 @@
 import { readFileSync, existsSync } from "node:fs";
 
 export type Project = {
+  /** Réglages de l'agent propres au projet (voir projects.ts) : instructions de l'équipe, modèle, nombre de tours, budget par exécution. */
+  instructions?: string; agentModel?: string; agentMaxTurns?: number; agentBudgetUsd?: number;
   id: string;
   name: string;
   /** URL https (ou chemin local, pour les tests) du dépôt git. */

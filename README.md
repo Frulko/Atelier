@@ -35,6 +35,7 @@ A teammate writes *"add a volume discount to the Travel tab"*. An AI agent edits
 - **Discuss** with an assistant that has read your team's *knowledge* (tone, rules, vocabulary) and tells you which items it used. Nothing is modified; discussions are private to their author. Attach images, PDFs or text files.
 - **Run a task**: the agent changes the code in a sandbox. A task is also a conversation — ask for adjustments and it updates the same branch and merge request.
 - **See where each project stands**: site health, last commit, deployment, latest task — in a project space with its own menu and breadcrumb.
+- **Configure the AI per project**: team instructions, agent settings (model, turns, budget), and the repository's `CLAUDE.md`, `AGENTS.md`, rules and skills — created from templates in the editor, or written by the agent.
 - **Edit by hand when you prefer**: an in-browser editor (Monaco) on a private copy; it commits to a branch under the same review rules, and can polish an agent's proposal.
 - **Be taken by the hand**: a welcome tour, a guide and a guided first use case (a bakery that wants a contact page).
 

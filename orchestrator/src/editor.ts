@@ -153,8 +153,21 @@ async function assertRoom(id: string, extra: number, newFile: boolean) {
 }
 
 /** Brouillon : écrit dans l'espace de travail, rien ne quitte le serveur avant « Valider ». */
-export async function writeText(s: EditorSession, rel: string, content: unknown): Promise<{ path: string; size: number }> {
+/** Crée les dossiers manquants d'un chemin, un par un (chacun validé comme le reste : jamais de lien suivi, jamais hors de l'arbre). */
+async function ensureParents(s: EditorSession, rel: string) {
+  const parts = rel.split("/").slice(0, -1);
+  for (let i = 1; i <= parts.length; i++) {
+    const dir = parts.slice(0, i).join("/");
+    const abs = await resolveIn(s.id, dir, { mustExist: false });
+    const st = await lstat(abs).catch(() => null);
+    if (!st) { await assertRoom(s.id, 0, false); await mkdir(abs); }
+    else if (!st.isDirectory()) throw new EditorError(400, "un fichier occupe déjà ce nom de dossier");
+  }
+}
+
+export async function writeText(s: EditorSession, rel: string, content: unknown, opts: { parents?: boolean } = {}): Promise<{ path: string; size: number }> {
   touchEditorSession(s.id);
+  if (opts.parents) await ensureParents(s, rel);
   if (typeof content !== "string") throw new EditorError(400, "contenu invalide");
   const buf = Buffer.from(content, "utf8");
   if (buf.length > MAX_FILE_BYTES) throw new EditorError(413, `fichier trop gros (plus de ${MAX_FILE_BYTES / 1e6} Mo)`);

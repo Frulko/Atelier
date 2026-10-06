@@ -75,6 +75,15 @@ show mini-regie "$ID" NOTES.md | grep -q "horaires" || fail "l'ajustement n'est 
 SUBJECTS=$(git --git-dir="$S/fixtures/mini-regie.git" log "atelier/$ID" --format=%s)
 grep -q "ajustement 2" <<<"$SUBJECTS" || fail "pas de commit d'ajustement sur la branche"
 
+# 2c. Instructions du projet : l'agent les reçoit (le faux agent le dit dans le journal) et la plateforme l'écrit dans le journal
+PB=$(pid boulangerie)
+[ "$(code "${A[@]}" -X PATCH $O/projects/$PB -d '{"instructions":"Signe chaque page Le Fournil.","agentMaxTurns":5}')" = 200 ] || fail "réglages IA du projet refusés"
+ID2=$(submit boulangerie "ajoute un pied de page"); wait_done "$ID2"
+EV2=$(curl -s -m 3 "${A[@]}" "$O/tasks/$ID2/events" || true)
+grep -q "Instructions du projet reçues" <<<"$EV2" || fail "l'agent n'a pas reçu les instructions du projet"
+grep -q "Instructions du projet données" <<<"$EV2" || fail "le journal ne dit pas que les instructions ont été données"
+curl -sf "${A[@]}" -X PATCH $O/projects/$PB -d '{"instructions":null,"agentMaxTurns":null}' >/dev/null || fail "effacement des réglages refusé"
+
 # 3. Boucle de correction : le 1er essai casse la vérification, le 2e la répare
 ID=$(submit todo-api "casse le projet"); wait_done "$ID"
 # le flux SSE reste ouvert : curl sort sur délai (code 28), d'où le `|| true`

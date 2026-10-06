@@ -47,6 +47,8 @@ async function execute(id: string) {
     const knowledge = renderKnowledge(sel.chosen);
     if (sel.chosen.length) log("step", `Connaissances données à l'agent : ${sel.chosen.map((k) => k.title).join(", ")}.`);
 
+    if (p.instructions) log("step", "Instructions du projet données à l'agent.");
+
     let prompt = ask;
     let files: string[] = [];
     for (let attempt = 1; attempt <= cfg.maxAttempts; attempt++) {
@@ -54,7 +56,7 @@ async function execute(id: string) {
       log("step", attempt === 1 ? "L'agent travaille…" : `L'agent corrige (essai ${attempt}/${cfg.maxAttempts})…`);
       const name = `atelier-${id}-agent${attempt}`;
       current.set(id, name);
-      const r = await runAgent({ name, tree: ws.tree, prompt, engine: p.engine, token, knowledge, onEvent: (e) => log(e.type, [e.text, e.name, e.detail].filter(Boolean).join(" ")) });
+      const r = await runAgent({ name, tree: ws.tree, prompt, engine: p.engine, token, knowledge, instructions: p.instructions, model: p.agentModel, maxTurns: p.agentMaxTurns, budgetUsd: p.agentBudgetUsd, onEvent: (e) => log(e.type, [e.text, e.name, e.detail].filter(Boolean).join(" ")) });
       cost += r.cost;
       updateTask(id, { cost });
       if (cancelled.has(id)) throw new Error("cancelled");

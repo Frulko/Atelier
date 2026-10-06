@@ -127,6 +127,23 @@ with sync_playwright() as p:
         expect(admin).to_have_url(re.compile(f"projects/[0-9a-f]+{url}$"))
         expect(side).to_be_visible()                                                # the menu stays where we go
         expect(crumbs).to_contain_text(label)
+    # ----------------------------------------------------------------- the project's AI configuration
+    side.get_by_role("link", name=re.compile("^IA")).click()
+    expect(admin.get_by_text("Ce que l'agent reçoit à chaque tâche")).to_be_visible()
+    admin.get_by_label("Instructions du projet").fill("Signe chaque page « Le Fournil ».")
+    admin.get_by_role("button", name="Enregistrer").first.click()
+    expect(admin.get_by_text("Instructions enregistrées.")).to_be_visible()
+    expect(admin.get_by_text("Absent").first).to_be_visible(timeout=30000)             # CLAUDE.md is read from the repository: absent here
+    admin.get_by_role("button", name="Créer depuis un modèle").first.click()        # opens the editor with a starter CLAUDE.md
+    expect(admin.get_by_role("tab", name="CLAUDE.md")).to_be_visible(timeout=60000)
+    expect(admin.get_by_role("list", name="Fichiers modifiés").get_by_text("CLAUDE.md")).to_be_visible()
+    shot(admin, "05g-ai-editor")
+    admin.get_by_role("button", name=re.compile("Abandonner|Confirmer")).click()
+    admin.get_by_role("button", name=re.compile("Abandonner|Confirmer")).click()
+    expect(admin.get_by_role("heading", level=1, name="Todo API (Node)")).to_be_visible()
+    side.get_by_role("link", name=re.compile("^IA")).click()
+    shot(admin, "05h-ai")
+
     side.get_by_role("link", name=re.compile("^Conversations")).click()             # opening a conversation keeps the project context
     admin.get_by_role("main").get_by_role("link").filter(has_text="casse le projet").first.click()
     expect(admin).to_have_url(re.compile(r"projects/[0-9a-f]+/conversations/[0-9a-f]+$"))

@@ -17,6 +17,7 @@ export interface Project {
   id: string; slug: string; name: string; repo: string; branch: string; forge: "gitlab" | "github" | "none";
   check: string; engine: string; protectedPaths: string[]; gitSecretId: string | null;
   siteUrl: string | null; healthUrl: string | null;
+  instructions: string | null; agentModel: string | null; agentMaxTurns: number | null; agentBudgetUsd: number | null;
 }
 export interface AccessCheck { ok: boolean; branchFound: boolean; error?: "auth" | "not_found" | "timeout" | "unreachable"; detail?: string; ms: number }
 

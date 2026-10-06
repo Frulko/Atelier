@@ -55,6 +55,7 @@ These are the project's reason to exist. Do not weaken them.
 7. **Do not add a production dependency** to the orchestrator without a strong reason. The one deliberate exception is the Vercel AI SDK family (`ai`, `@ai-sdk/*`, `zod`) behind the discussion assistant; keep it confined to `chat.ts`.
 8. **Discussions are private to their author** (even admins get a 404); task conversations are visible to the organization. Never trust a browser-sent history: the server's stored messages are the truth. Treat attachments as hostile (`attachments.ts`).
 9. **Anything the server fetches from an address a user typed** (health checks) goes through `health.ts`: link-local always refused, private only with `ATELIER_HEALTH_ALLOW_PRIVATE`, checked at connection time, no redirects, no bodies kept.
+12. **The repository's AI files are read only through `AI_FILE` (`git.ts`)**: an allow-list of paths, member-only, never a free path.
 11. **The editor never leaves its tree**: every path goes through `safeRel` and `resolveIn` in `editor.ts` (no `..`, no `.git`, symlinks never followed); a session is private to its author; a push is never forced. The entry page carries a per-response CSP nonce for styles (Monaco): never add `unsafe-inline`.
 10. **Knowledge is data, not authority**: it is given to the assistant and the agent as context and must never be able to grant a power.
 

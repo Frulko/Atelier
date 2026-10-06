@@ -120,6 +120,11 @@ POST   /api/orgs/:org/editor/sessions/:id/check                   run the projec
 POST   /api/orgs/:org/editor/sessions/:id/commit { message }      commit as the person, push the branch, open the MR if none (never merges)
 DELETE /api/orgs/:org/editor/sessions/:id                         discard the workspace
 
+# AI configuration of a project
+PATCH  /api/orgs/:org/projects/:id { instructions?, agentModel?, agentMaxTurns?, agentBudgetUsd? }   admin+  team instructions (≤ 4000 characters), model, turns (1–100), budget per run ($0.1–50); null or "" restores the default
+GET    /api/orgs/:org/projects/:id/ai-files                       member+  CLAUDE.md, AGENTS.md, .claude/rules, skills and agents found on the base branch
+GET    /api/orgs/:org/projects/:id/ai-file?path=                  member+  one of those files (allow-listed paths only, 100 KB)
+
 # tracking
 GET    /api/orgs/:org/stats?days=30                               viewer+  totals, success rate, average duration, per day, per project
 GET    /api/orgs/:org/usage?days=30                               admin+   spend and calls per day, member, provider; budget and projection
@@ -169,6 +174,7 @@ Everything above is reachable from the browser (the UI text is in French). Pages
 | Guide | everyone | How it works, guided first steps, glossary, FAQ, replay of the welcome tour |
 | Tasks | everyone | Filter (status, project, member, text, dates), start a task, follow it live, retry, cancel |
 | Projects | read: everyone · manage: admin+ | A project has **its own side menu** that stays while you move through it — Overview (status, figures, recent tasks, conversations and knowledge), Tasks, Conversations, Knowledge, Editor (member+), Configuration — a project header, and the breadcrumb in the top bar of every page. Conversations and tasks open **inside the project** (same menu, same breadcrumb) when you come from it. One **New** button starts a task or a discussion on that project. Admins edit it, **check access** to the repository and delete it |
+| AI | member+ (edit: admin+) | What the agent receives on every task, the project's own **instructions**, the agent settings (model, turns, budget per run), and the repository's AI files — `CLAUDE.md`, `AGENTS.md`, rules, skills, sub-agents — with a preview, an "edit in the editor" shortcut, starter templates and "have the agent write it" |
 | Editor | member+ | A file tree, Monaco tabs with autosaved drafts, the diff of what changed, the project check in the sandbox, and **Validate and send** (commit and push, never a merge). Also opens a finished task's branch |
 | Team | admin+ | Members and roles, removal and leaving, invitations (the link is shown once, with **Copy**), revocation |
 | Integrations | admin+ | Git tokens and model keys: add, rename, rotate, delete; which projects use each, last use |

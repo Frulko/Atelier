@@ -14,6 +14,8 @@ export function runAgent(opts: {
   name: string; tree: string; prompt: string; engine: string;
   /** Connaissances de l'équipe (Markdown), données à l'agent comme contexte ; vide si aucune. */
   knowledge?: string;
+  /** Réglages du projet : instructions de l'équipe, modèle, tours maximum, budget par exécution. */
+  instructions?: string; model?: string; maxTurns?: number; budgetUsd?: number;
   /** Jeton de tâche : tient lieu de clé d'API dans le bac à sable (voir tokens.ts). */
   token: string;
   onEvent: (e: { type: string; text?: string; name?: string; detail?: string; ok?: boolean; cost?: number }) => void;
@@ -24,6 +26,9 @@ export function runAgent(opts: {
     "-v", `${opts.tree}:/work`,
     "-e", "TASK_PROMPT",
     "-e", "TASK_KNOWLEDGE",
+    "-e", "TASK_INSTRUCTIONS",
+    ...(opts.model ? ["-e", `ATELIER_MODEL=${opts.model}`] : []),
+    ...(opts.maxTurns ? ["-e", `MAX_TURNS=${opts.maxTurns}`] : []),
     "-e", `ATELIER_ENGINE=${opts.engine}`,
     // Un préfixe par fournisseur : le proxy choisit l'amont et injecte la vraie clé.
     "-e", `ANTHROPIC_BASE_URL=${cfg.proxyUrl}/anthropic`,
@@ -32,14 +37,14 @@ export function runAgent(opts: {
     "-e", "OPENAI_API_KEY",
     "-e", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1",
     "-e", "DISABLE_TELEMETRY=1",
-    "-e", `MAX_BUDGET_USD=${cfg.maxBudgetUsd}`,
+    "-e", `MAX_BUDGET_USD=${opts.budgetUsd ?? cfg.maxBudgetUsd}`,
     ...(cfg.fakeAgent ? ["-e", "ATELIER_FAKE_AGENT=1"] : []),
     cfg.sandboxImage,
   ];
   return new Promise((resolve) => {
     // Environnement MINIMAL du client docker : seules les variables relayées par « -e NOM » entrent dans le conteneur,
     // et ni les clés de l'orchestrateur ni ses autres secrets ne sont dans cet environnement.
-    const env: NodeJS.ProcessEnv = { PATH: process.env.PATH, HOME: process.env.HOME, TASK_PROMPT: opts.prompt, TASK_KNOWLEDGE: opts.knowledge ?? "", ANTHROPIC_API_KEY: opts.token, OPENAI_API_KEY: opts.token };
+    const env: NodeJS.ProcessEnv = { PATH: process.env.PATH, HOME: process.env.HOME, TASK_PROMPT: opts.prompt, TASK_KNOWLEDGE: opts.knowledge ?? "", TASK_INSTRUCTIONS: opts.instructions ?? "", ANTHROPIC_API_KEY: opts.token, OPENAI_API_KEY: opts.token };
     for (const k of ["DOCKER_HOST", "DOCKER_CONFIG", "DOCKER_CONTEXT"]) if (process.env[k]) env[k] = process.env[k];
     const p = spawn("docker", args, { env });
     const timer = setTimeout(() => { opts.onEvent({ type: "error", text: "Délai dépassé, agent arrêté." }); kill(opts.name); }, cfg.agentTimeoutS * 1000);

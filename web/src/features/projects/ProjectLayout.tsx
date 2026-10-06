@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { getRouteApi, Link, Outlet, useMatchRoute, useNavigate, useRouterState } from "@tanstack/react-router";
 import clsx from "clsx";
-import { BookOpen, Code2, ExternalLink, GitBranch, LayoutDashboard, ListChecks, MessageSquare, Pencil, Plus, Settings, type LucideIcon } from "lucide-react";
+import { BookOpen, Code2, ExternalLink, GitBranch, LayoutDashboard, ListChecks, MessageSquare, Pencil, Plus, Settings, Sparkles, type LucideIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
@@ -53,6 +53,7 @@ export function ProjectLayout() {
     { to: `${base}/tasks`, label: "Tâches", icon: ListChecks, count: tasks.data?.total },
     { to: `${base}/conversations`, label: "Conversations", icon: MessageSquare, count: convs.data?.total },
     { to: `${base}/knowledge`, label: "Connaissances", icon: BookOpen, count: knowledgeCount },
+    { to: `${base}/ai`, label: "IA", icon: Sparkles, member: true },
     { to: `${base}/editor`, label: "Éditeur", icon: Code2, member: true },
     { to: `${base}/settings`, label: "Configuration", icon: Settings },
   ];
