@@ -107,6 +107,15 @@ POST   /api/orgs/:org/conversations/:id/messages { text }         task author or
 GET    /api/orgs/:org/status                                      viewer+  per project: health, uptime, last commit, deployment, last task
 POST   /api/orgs/:org/projects/:id/refresh                        member+  check health and git now (rate limited)
 
+# code editor (phase 1: API only)
+POST   /api/orgs/:org/editor/sessions { projectId, taskId? }      member+  open or resume a private workspace on a new branch (or a done task's branch)
+GET    /api/orgs/:org/editor/sessions/:id                         author  state and expiry; anyone else gets 404
+GET    /api/orgs/:org/editor/sessions/:id/tree?path=              one directory, folders first, `.git` never listed
+GET    /api/orgs/:org/editor/sessions/:id/file?path=              text only, 1 MB
+PUT    /api/orgs/:org/editor/sessions/:id/file { path, content }  save a draft
+POST   /api/orgs/:org/editor/sessions/:id/files { op: create | rename | delete, … }
+DELETE /api/orgs/:org/editor/sessions/:id                         discard the workspace
+
 # tracking
 GET    /api/orgs/:org/stats?days=30                               viewer+  totals, success rate, average duration, per day, per project
 GET    /api/orgs/:org/usage?days=30                               admin+   spend and calls per day, member, provider; budget and projection

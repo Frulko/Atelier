@@ -13,6 +13,8 @@ import { cookieHeader, currentSessionId, endOtherSessions, endSession, sessionId
 import { FailureLimiter } from "./ratelimit.ts";
 import { can, canAssign, canTouch, ROLES, type Action } from "./access.ts";
 import { hashInviteToken, INVITE_TTL_MS, newInviteToken } from "./invites.ts";
+import { getEditorSession, touchEditorSession, type EditorSession } from "./db.ts";
+import { discardSession, EditorError, fileOp, IDLE_MS, listDir, openSession, readText, safeRel, writeText } from "./editor.ts";
 import { cancel, newId } from "./pipeline.ts";
 import { securityHeaders, serveStatic } from "./static.ts";
 import { followUp, MAX_TURNS, startTask } from "./start.ts";
@@ -252,6 +254,42 @@ export function createApp() {
       }
 
       // ---- ressources d'une organisation : /api/orgs/:org/...
+      // ---- éditeur de code : /api/orgs/:org/editor/sessions[/:id][/tree|/file|/files]
+      const ed = /^\/api\/orgs\/([0-9a-f]{16})\/editor\/sessions(?:\/([0-9a-f]{16}))?(?:\/(tree|file|files))?$/.exec(url.pathname);
+      if (ed) {
+        const [, orgId, sid, sub] = ed;
+        const a = access(user, orgId, "task:create"); // éditer vaut lancer une tâche : membre au moins, un lecteur n'a rien ici
+        if (a === "not_found") return json(res, 404, { error: "introuvable" });
+        if (typeof a === "string") return json(res, 403, { error: "droits insuffisants" });
+        const log = (action: string, target?: { type: string; id: string }, meta?: Parameters<typeof audit>[3]) => audit({ orgId, userId: user.id, ip: clientIp(req) }, action, target, meta);
+        const sessionJson = (x: EditorSession) => ({ id: x.id, projectId: x.project_id, taskId: x.task_id, branch: x.branch, baseBranch: x.base_branch, createdAt: x.created_at, lastActive: x.last_active, expiresAt: x.last_active + IDLE_MS });
+        try {
+          if (!sid && !sub && req.method === "POST") {
+            const { projectId, taskId } = await body(req);
+            const row = typeof projectId === "string" ? getProjectInOrg(projectId, orgId) : undefined;
+            if (!row) return json(res, 400, { error: "projet introuvable" });
+            if (taskId != null && typeof taskId !== "string") return json(res, 400, { error: "tâche invalide" });
+            const s = await openSession({ orgId, userId: user.id, project: row, taskId: taskId ?? null });
+            log("editor.open", { type: "project", id: row.id }, { branch: s.branch, task: s.task_id ?? undefined });
+            return json(res, 201, sessionJson(s));
+          }
+          if (sid) {
+            const s = getEditorSession(sid, orgId, user.id); // privée à son auteur : celle d'un autre est introuvable, même pour un administrateur
+            if (!s) return json(res, 404, { error: "introuvable" });
+            if (!sub && req.method === "GET") { touchEditorSession(s.id); return json(res, 200, sessionJson(s)); }
+            if (!sub && req.method === "DELETE") { await discardSession(s); log("editor.discard", { type: "project", id: s.project_id }, { branch: s.branch }); return json(res, 200, { ok: true }); }
+            if (sub === "tree" && req.method === "GET") return json(res, 200, await listDir(s, safeRel(url.searchParams.get("path") ?? "", { allowRoot: true })));
+            if (sub === "file" && req.method === "GET") return json(res, 200, await readText(s, safeRel(url.searchParams.get("path"))));
+            if (sub === "file" && req.method === "PUT") { const b = await body(req, 1_600_000); return json(res, 200, await writeText(s, safeRel(b.path), b.content)); }
+            if (sub === "files" && req.method === "POST") { const b = await body(req); return json(res, 200, await fileOp(s, b.op, b)); }
+          }
+        } catch (e) {
+          if (e instanceof EditorError) return json(res, e.status, { error: e.message });
+          throw e;
+        }
+        return void res.writeHead(404).end();
+      }
+
       const o = /^\/api\/orgs\/([0-9a-f]{16})\/(projects|tasks|secrets|members|invitations|audit|stats|usage|knowledge|conversations|status)(?:\/([0-9a-f]{8,16}|preview))?(\/events|\/cancel|\/retry|\/verify|\/chat|\/messages|\/refresh)?$/.exec(url.pathname);
       if (o) {
         const [, orgId, kind, itemId, sub] = o;

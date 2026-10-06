@@ -32,6 +32,7 @@ Three commands. All three must be green before a commit.
 | Knowledge selection and validation: budget, pinning, relevance with accents, project scope, oversized items skipped | `knowledge.test.ts` |
 | Follow-up turns: rules (only done tasks, turn cap, author or admin), failure leaves the proposal intact, budget | `followup.test.ts` (the real extra turn on the same branch is in `smoke.sh`) |
 | Project status: health (ok, 5xx, redirect not followed, timeout, refused), **SSRF guards** (metadata and link-local always refused, private only when allowed, literal IPs), last commit read from a real git repository, uptime and retention, isolation, rate limit | `status.test.ts`, `health-private.test.ts` |
+| Editor sessions and files: hostile paths (`..`, absolute, `.git`, backslash, NUL), **symlinks never followed** (a planted link to a host file cannot be read, written or traversed), binary and oversized files, workspace quota, privacy (even admins get 404), role, per-organization limit, expiry and orphan cleanup, opening a real task branch | `editor.test.ts` |
 | Task list filters, pagination bounds, literal text search, timing, retry | `tasks-api.test.ts` |
 | Audit log: what is recorded, who reads it, filters, CSV, **no secret ever in it** | `audit.test.ts` |
 | Dashboard and usage statistics: exact totals, no gaps, windows, roles, isolation | `stats.test.ts` |

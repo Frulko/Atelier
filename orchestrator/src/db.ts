@@ -135,6 +135,15 @@ db.exec(`
     ts integer not null, ok integer not null, status integer, ms integer
   );
   create index if not exists health_checks_project on health_checks(project_id, ts);
+  -- Éditeur de code : une session = un espace de travail sur le serveur, une branche, une personne.
+  create table if not exists editor_sessions (
+    id text primary key, org_id text not null references orgs(id) on delete cascade,
+    user_id text not null references users(id) on delete cascade,
+    project_id text not null references projects(id) on delete cascade,
+    task_id text, branch text not null, base_branch text not null,
+    created_at integer not null, last_active integer not null
+  );
+  create index if not exists editor_sessions_org on editor_sessions(org_id, user_id);
 `);
 const secretCols = (db.prepare("pragma table_info(secrets)").all() as { name: string }[]).map((c) => c.name);
 if (!secretCols.includes("last_used_at")) db.exec("alter table secrets add column last_used_at integer");
@@ -729,3 +738,24 @@ export function projectStatuses(orgId: string, now = Date.now()) {
   });
 }
 export const projectsToMonitor = () => db.prepare("select p.*, s.health_checked_at, s.git_checked_at from projects p left join project_status s on s.project_id = p.id").all() as unknown as (ProjectRow & { health_checked_at: number | null; git_checked_at: number | null })[];
+
+/* ------------------------- éditeur de code : sessions ------------------------- */
+
+export type EditorSession = { id: string; org_id: string; user_id: string; project_id: string; task_id: string | null; branch: string; base_branch: string; created_at: number; last_active: number };
+
+export function insertEditorSession(s: Omit<EditorSession, "id" | "created_at" | "last_active"> & { id?: string }): string {
+  const id = s.id ?? rid(), now = Date.now();
+  db.prepare("insert into editor_sessions (id, org_id, user_id, project_id, task_id, branch, base_branch, created_at, last_active) values (?,?,?,?,?,?,?,?,?)")
+    .run(id, s.org_id, s.user_id, s.project_id, s.task_id, s.branch, s.base_branch, now, now);
+  return id;
+}
+/** Une session est PRIVÉE à son auteur et à son organisation : tout autre appel la trouve introuvable. */
+export const getEditorSession = (id: string, orgId: string, userId: string) =>
+  db.prepare("select * from editor_sessions where id = ? and org_id = ? and user_id = ?").get(id, orgId, userId) as EditorSession | undefined;
+export const findEditorSession = (orgId: string, userId: string, projectId: string, taskId: string | null) =>
+  db.prepare("select * from editor_sessions where org_id = ? and user_id = ? and project_id = ? and task_id is ?").get(orgId, userId, projectId, taskId) as EditorSession | undefined;
+export const countEditorSessions = (orgId: string) => (db.prepare("select count(*) as n from editor_sessions where org_id = ?").get(orgId) as { n: number }).n;
+export const touchEditorSession = (id: string) => db.prepare("update editor_sessions set last_active = ? where id = ?").run(Date.now(), id);
+export const deleteEditorSession = (id: string) => db.prepare("delete from editor_sessions where id = ?").run(id).changes > 0;
+export const idleEditorSessions = (before: number) => db.prepare("select * from editor_sessions where last_active < ?").all(before) as EditorSession[];
+export const allEditorSessionIds = () => (db.prepare("select id from editor_sessions").all() as { id: string }[]).map((r) => r.id);

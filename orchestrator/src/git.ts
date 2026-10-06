@@ -46,7 +46,7 @@ export async function clone(p: Project, taskId: string, branch: string, existing
   await rm(join(ws.tree, ".git"), { force: true }); // l'agent ne voit pas le git
   if (!existing) await git(ws, ["checkout", "--quiet", "-b", branch]);
   // uid 1000 = utilisateur "node" du bac à sable
-  await run("chown", ["-R", "1000:1000", ws.tree]);
+  if (process.getuid?.() === 0) await run("chown", ["-R", "1000:1000", ws.tree]); // sans les droits root (tests, poste de dev) il n'y a rien à changer
   return ws;
 }
 
