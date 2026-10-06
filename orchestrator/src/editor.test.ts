@@ -194,3 +194,98 @@ test("sur une vraie branche de tâche : on l'ouvre quand la tâche est terminée
   assert.deepEqual([s.branch, s.taskId], ["atelier/f1f1f1f1", "f1f1f1f1"]);
   assert.equal(((await (await file(cS, s.id, "NOTES.md")).json()) as { content: string }).content, "- note de l'agent\n");   // le travail de l'agent est là
 });
+
+const diff = (c: string, id: string, path?: string) => call(c, "GET", `${A}/${id}/diff${path ? `?path=${encodeURIComponent(path)}` : ""}`);
+const commit = (c: string, id: string, message: unknown) => call(c, "POST", `${A}/${id}/commit`, { message });
+const gitOf = (...a: string[]) => execFileSync("git", ["-C", repo, ...a], { encoding: "utf8" });
+
+test("changements : diff par fichier avec statut, chemins protégés signalés, aucun changement au départ", async () => {
+  await ed.sweepEditor(Date.now() + ed.IDLE_MS + 1000);                                  // repart sans session ouverte (limite par organisation)
+  db.updateProject(pA2, orgA, { protected_paths: JSON.stringify(["src/"]) });
+  const s = await open(cM, pA2);
+  const none = (await (await diff(cM, s.id)).json()) as { files: unknown[]; diff: string };
+  assert.deepEqual([none.files.length, none.diff], [0, ""]);
+  await put(cM, s.id, "index.html", "<title>Fournil</title>\n");
+  await put(cM, s.id, "src/app.js", "console.log('nouveau');\n");
+  await put(cM, s.id, "NOUVEAU.md", "# neuf\n");
+  await ops(cM, s.id, { op: "rename", from: "logo.bin", to: "img.bin" });
+  await ops(cM, s.id, { op: "delete", path: "lien-fichier" });
+  const d = (await (await diff(cM, s.id)).json()) as { files: { path: string; status: string; protected: boolean; from?: string }[]; diff: string; truncated: boolean };
+  const by = Object.fromEntries(d.files.map((f) => [f.path, f]));
+  assert.equal(by["index.html"]!.status, "M"); assert.equal(by["NOUVEAU.md"]!.status, "A"); assert.equal(by["lien-fichier"]!.status, "D");
+  assert.deepEqual([by["img.bin"]!.status, by["img.bin"]!.from], ["R", "logo.bin"]);
+  assert.deepEqual([by["src/app.js"]!.protected, by["index.html"]!.protected], [true, false]);
+  assert.match(d.diff, /\+<title>Fournil<\/title>/);
+  const one = (await (await diff(cM, s.id, "NOUVEAU.md")).json()) as { diff: string };
+  assert.ok(one.diff.includes("NOUVEAU.md") && !one.diff.includes("index.html"));
+  assert.equal((await diff(cM, s.id, "../x")).status, 400);
+  assert.equal((await diff(cS, s.id)).status, 404);                              // privé
+  assert.equal((await diff(cV, s.id)).status, 403);
+  await call(cM, "DELETE", `${A}/${s.id}`);
+});
+
+test("valider : commit au nom de la personne, branche envoyée sur le dépôt, rien n'est fusionné ; plusieurs validations s'enchaînent", async () => {
+  await ed.sweepEditor(Date.now() + ed.IDLE_MS + 1000);                                  // repart sans session ouverte (limite par organisation)
+  db.updateProject(pA3, orgA, { protected_paths: JSON.stringify(["data/"]) });
+  const s = await open(cM, pA3);
+  assert.equal((await commit(cM, s.id, "rien")).status, 409);                    // aucune modification
+  await put(cM, s.id, "index.html", "<title>Fournil</title>\n");
+  for (const bad of ["", "   ", 5, null, "x".repeat(2001), "a\0b"]) assert.equal((await commit(cM, s.id, bad)).status, 400, String(bad).slice(0, 8));
+  assert.equal((await commit(cS, s.id, "intrusion")).status, 404);
+  const r = await commit(cM, s.id, "Corrige le titre du site");
+  assert.equal(r.status, 200);
+  const out = (await r.json()) as { files: number; flagged: string[]; mrUrl: string | null };
+  assert.deepEqual([out.files, out.flagged, out.mrUrl], [1, [], null]);          // projet sans forge : pas de demande de fusion
+  const log = gitOf("log", "-1", "--format=%an|%ae|%cn|%s%n%b", s.branch);
+  assert.match(log, /^max\|max@a\.fr\|Atelier\|Corrige le titre du site/);   // auteur = la personne, committer = la plateforme
+  assert.match(log, /Modifié dans l'éditeur Atelier par max@a\.fr/);
+  assert.equal(gitOf("show", `${s.branch}:index.html`), "<title>Fournil</title>\n");
+  assert.equal(gitOf("rev-parse", "main"), gitOf("rev-parse", "main"));          // main n'a pas bougé
+  assert.ok(!gitOf("log", "main", "--format=%s").includes("Corrige le titre"));
+  assert.equal(((await (await diff(cM, s.id)).json()) as { files: unknown[] }).files.length, 0);   // repart de zéro
+  await ops(cM, s.id, { op: "create", path: "data", type: "dir" });
+  await put(cM, s.id, "data/prix.csv", "pain,1\n");                              // chemin protégé : signalé
+  const r2 = (await (await commit(cM, s.id, "Ajoute les prix")).json()) as { flagged: string[] };
+  assert.deepEqual(r2.flagged, ["data/prix.csv"]);
+  assert.equal(gitOf("rev-list", "--count", `main..${s.branch}`).trim(), "2");
+  const audit = db.queryAudit(orgA, { action: "editor.commit" }).items.map((a) => a.meta);
+  assert.ok(audit.some((m) => m?.includes('"flagged":1')));
+  assert.ok(!JSON.stringify(db.queryAudit(orgA, {}).items).includes("<title>Fournil"));   // jamais le contenu des fichiers dans le journal
+});
+
+test("la branche a avancé ailleurs : l'envoi est refusé (409), jamais forcé", async () => {
+  await ed.sweepEditor(Date.now() + ed.IDLE_MS + 1000);                                  // repart sans session ouverte (limite par organisation)
+  const s = await open(cS, pA4);
+  await put(cS, s.id, "a-moi.txt", "x\n");
+  // quelqu'un crée la même branche avec un autre contenu sur le dépôt
+  gitOf("branch", s.branch, "main"); gitOf("checkout", "-q", s.branch);
+  writeFileSync(join(repo, "ailleurs.txt"), "y\n"); gitOf("add", "-A"); execFileSync("git", ["-C", repo, "-c", "user.name=Z", "-c", "user.email=z@x.fr", "commit", "-q", "-m", "ailleurs"]); gitOf("checkout", "-q", "main");
+  const r = await commit(cS, s.id, "Mon changement");
+  assert.equal(r.status, 409);
+  assert.match(((await r.json()) as { error: string }).error, /a changé sur le dépôt/);
+  assert.equal(gitOf("log", "-1", "--format=%s", s.branch).trim(), "ailleurs");   // la branche distante est intacte
+});
+
+test("valider sur la branche d'une tâche : la proposition s'enrichit (fichiers cumulés), refusé tant que l'agent travaille", async () => {
+  await ed.sweepEditor(Date.now() + ed.IDLE_MS + 1000);                                  // repart sans session ouverte (limite par organisation)
+  db.updateProject(pA, orgA, { protected_paths: JSON.stringify([]) });
+  g("checkout", "-q", "-b", "atelier/c1c1c1c1"); writeFileSync(join(repo, "NOTES.md"), "- agent\n"); g("add", "-A"); g("commit", "-q", "-m", "agent"); g("checkout", "-q", "main");
+  db.createTask("c1c1c1c1", orgA, max.id, pA, "x"); db.updateTask("c1c1c1c1", { status: "done", branch: "atelier/c1c1c1c1", files_json: JSON.stringify(["NOTES.md"]), mr_url: "https://forge.test/mr/9" });
+  const s = (await open(cM, pA, "c1c1c1c1")) as { id: string };
+  await put(cM, s.id, "NOTES.md", "- agent\n- humain\n");
+  db.updateTask("c1c1c1c1", { status: "running" });
+  assert.equal((await commit(cM, s.id, "pendant le tour")).status, 409);
+  db.updateTask("c1c1c1c1", { status: "done" });
+  const out = (await (await commit(cM, s.id, "Complète les notes")).json()) as { mrUrl: string };
+  assert.equal(out.mrUrl, "https://forge.test/mr/9");
+  assert.equal(gitOf("show", "atelier/c1c1c1c1:NOTES.md"), "- agent\n- humain\n");
+  assert.deepEqual(JSON.parse(db.getTask("c1c1c1c1")!.files_json!), ["NOTES.md"]);
+});
+
+test("vérification : réservée à l'auteur et aux membres (l'exécution réelle dans le bac à sable est dans smoke.sh)", async () => {
+  await ed.sweepEditor(Date.now() + ed.IDLE_MS + 1000);                                  // repart sans session ouverte (limite par organisation)
+  const s = await open(cA, pB === "" ? pA : pA2);
+  assert.equal((await call(cS, "POST", `${A}/${s.id}/check`)).status, 404);
+  assert.equal((await call(cV, "POST", `${A}/${s.id}/check`)).status, 403);
+  assert.equal((await call(cB, "POST", `${A}/${s.id}/check`)).status, 404);
+});

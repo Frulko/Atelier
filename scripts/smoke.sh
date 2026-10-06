@@ -83,6 +83,18 @@ grep -q check_failed <<<"$EV" || fail "aucun échec de vérification enregistré
 ! show todo-api "$ID" casse.js >/dev/null 2>&1 || fail "le fichier invalide est resté dans la branche"
 show todo-api "$ID" NOTES.md | grep -q "casse le projet" || fail "le changement valide a disparu après la correction"
 
+# 3b. Éditeur : une session privée, un brouillon, la vérification dans le bac à sable, puis un commit sur une branche
+ED=$(curl -sf "${A[@]}" $O/editor/sessions -d "{\"projectId\":\"$(pid todo-api)\"}")
+EID=$(sed 's/.*"id":"\([0-9a-f]*\)".*/\1/' <<<"$ED"); EBR=$(sed 's/.*"branch":"\([^"]*\)".*/\1/' <<<"$ED")
+[ "$(code "${A[@]}" -X PUT $O/editor/sessions/$EID/file -d '{"path":"EDITE.md","content":"fait à la main\n"}')" = 200 ] || fail "enregistrement d'un brouillon refusé"
+[ "$(code "${A[@]}" -X PUT $O/editor/sessions/$EID/file -d '{"path":"../evasion","content":"x"}')" = 400 ] || fail "chemin hors de l'arbre accepté"
+CHK=$(curl -sf "${A[@]}" $O/editor/sessions/$EID/check -d '{}')
+grep -q '"ok":true' <<<"$CHK" || fail "la vérification de l'éditeur a échoué : $CHK"
+COM=$(curl -sf "${A[@]}" $O/editor/sessions/$EID/commit -d '{"message":"Ajoute EDITE.md à la main"}') || fail "commit de l'éditeur refusé"
+grep -q '"files":1' <<<"$COM" || fail "commit inattendu : $COM"
+git --git-dir="$S/fixtures/todo-api.git" show "$EBR:EDITE.md" | grep -q "fait à la main" || fail "le commit de l'éditeur n'est pas sur la branche"
+[ "$(code "${A[@]}" -X DELETE $O/editor/sessions/$EID)" = 200 ] || fail "abandon de la session refusé"
+
 # 4. Nettoyage : plus aucun dossier de travail, plus aucun conteneur d'agent
 [ -z "$(ls -A "$S/work" | grep -v '^_status$')" ] || fail "dossier de travail non nettoyé"
 [ -z "$(docker ps -aq --filter label=atelier)" ] || fail "conteneur d'agent resté"

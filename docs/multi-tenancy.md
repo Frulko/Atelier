@@ -107,13 +107,16 @@ POST   /api/orgs/:org/conversations/:id/messages { text }         task author or
 GET    /api/orgs/:org/status                                      viewer+  per project: health, uptime, last commit, deployment, last task
 POST   /api/orgs/:org/projects/:id/refresh                        member+  check health and git now (rate limited)
 
-# code editor (phase 1: API only)
+# code editor (API only for now)
 POST   /api/orgs/:org/editor/sessions { projectId, taskId? }      member+  open or resume a private workspace on a new branch (or a done task's branch)
 GET    /api/orgs/:org/editor/sessions/:id                         author  state and expiry; anyone else gets 404
 GET    /api/orgs/:org/editor/sessions/:id/tree?path=              one directory, folders first, `.git` never listed
 GET    /api/orgs/:org/editor/sessions/:id/file?path=              text only, 1 MB
 PUT    /api/orgs/:org/editor/sessions/:id/file { path, content }  save a draft
 POST   /api/orgs/:org/editor/sessions/:id/files { op: create | rename | delete, … }
+GET    /api/orgs/:org/editor/sessions/:id/diff?path=              changes since the session started (status, protected paths, unified patch)
+POST   /api/orgs/:org/editor/sessions/:id/check                   run the project check in the sandbox
+POST   /api/orgs/:org/editor/sessions/:id/commit { message }      commit as the person, push the branch, open the MR if none (never merges)
 DELETE /api/orgs/:org/editor/sessions/:id                         discard the workspace
 
 # tracking

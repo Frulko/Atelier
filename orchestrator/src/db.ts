@@ -122,6 +122,7 @@ db.exec("create index if not exists tasks_org on tasks(org_id, created_at)");
 const projectCols = (db.prepare("pragma table_info(projects)").all() as { name: string }[]).map((c) => c.name);
 if (!projectCols.includes("site_url")) db.exec("alter table projects add column site_url text");
 if (!projectCols.includes("health_url")) db.exec("alter table projects add column health_url text");
+if (!(db.prepare("pragma table_info(editor_sessions)").all() as { name: string }[]).some((c) => c.name === "mr_url") && (db.prepare("pragma table_info(editor_sessions)").all() as unknown[]).length) db.exec("alter table editor_sessions add column mr_url text");
 db.exec(`
   -- Dernier état connu de chaque projet (santé, dernier commit, déploiement) et historique de santé (7 jours).
   create table if not exists project_status (
@@ -141,7 +142,7 @@ db.exec(`
     user_id text not null references users(id) on delete cascade,
     project_id text not null references projects(id) on delete cascade,
     task_id text, branch text not null, base_branch text not null,
-    created_at integer not null, last_active integer not null
+    created_at integer not null, last_active integer not null, mr_url text
   );
   create index if not exists editor_sessions_org on editor_sessions(org_id, user_id);
 `);
@@ -741,9 +742,9 @@ export const projectsToMonitor = () => db.prepare("select p.*, s.health_checked_
 
 /* ------------------------- éditeur de code : sessions ------------------------- */
 
-export type EditorSession = { id: string; org_id: string; user_id: string; project_id: string; task_id: string | null; branch: string; base_branch: string; created_at: number; last_active: number };
+export type EditorSession = { id: string; org_id: string; user_id: string; project_id: string; task_id: string | null; branch: string; base_branch: string; created_at: number; last_active: number; mr_url: string | null };
 
-export function insertEditorSession(s: Omit<EditorSession, "id" | "created_at" | "last_active"> & { id?: string }): string {
+export function insertEditorSession(s: Omit<EditorSession, "id" | "created_at" | "last_active" | "mr_url"> & { id?: string }): string {
   const id = s.id ?? rid(), now = Date.now();
   db.prepare("insert into editor_sessions (id, org_id, user_id, project_id, task_id, branch, base_branch, created_at, last_active) values (?,?,?,?,?,?,?,?,?)")
     .run(id, s.org_id, s.user_id, s.project_id, s.task_id, s.branch, s.base_branch, now, now);
@@ -755,6 +756,7 @@ export const getEditorSession = (id: string, orgId: string, userId: string) =>
 export const findEditorSession = (orgId: string, userId: string, projectId: string, taskId: string | null) =>
   db.prepare("select * from editor_sessions where org_id = ? and user_id = ? and project_id = ? and task_id is ?").get(orgId, userId, projectId, taskId) as EditorSession | undefined;
 export const countEditorSessions = (orgId: string) => (db.prepare("select count(*) as n from editor_sessions where org_id = ?").get(orgId) as { n: number }).n;
+export const setEditorMr = (id: string, url: string | null) => db.prepare("update editor_sessions set mr_url = ? where id = ?").run(url, id);
 export const touchEditorSession = (id: string) => db.prepare("update editor_sessions set last_active = ? where id = ?").run(Date.now(), id);
 export const deleteEditorSession = (id: string) => db.prepare("delete from editor_sessions where id = ?").run(id).changes > 0;
 export const idleEditorSessions = (before: number) => db.prepare("select * from editor_sessions where last_active < ?").all(before) as EditorSession[];

@@ -1,6 +1,6 @@
 # Embedded code editor
 
-**Status:** phase 1 (workspaces and files, API only) has shipped; the commit, the check, the merge request and the interface are still to build.
+**Status:** phases 1 and 2 (workspaces, files, diff, check, commit, merge request — API only) have shipped; the interface and the integration with tasks are still to build.
 
 Atelier lets people change software by talking to an agent. Some people — and some changes — want the opposite: open a file, fix a sentence or a colour by hand, and propose it for review without installing anything. This page designs an **editor in the browser** (a small VS Code) that edits a project's code and commits it, under the same review rules as the agent.
 
@@ -65,7 +65,7 @@ A full-width page `/o/:org/projects/:id/editor`: file tree on the left (with a f
 ## Phases
 
 1. ✅ **Workspaces and files**: session lifecycle, path safety, file API, limits, expiry, tests (traversal, symlinks, quotas, isolation between organizations).
-2. **Commit, check, merge request**: diff, commit and push, the check in the sandbox, merge request creation, audit, tests on a real local repository.
+2. ✅ **Commit, check, merge request**: diff, commit and push, the check in the sandbox, merge request creation, audit, tests on a real local repository.
 3. **The editor**: Monaco bundled with workers and the CSP change, tree, tabs, diff panel, commit dialog, keyboard shortcuts, browser test.
 4. **Integration**: edit a task's proposal, "open in editor" from a task and from the dashboard, documentation and screenshots.
 

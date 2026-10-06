@@ -163,3 +163,42 @@ export async function latestDeployment(p: Project): Promise<LatestDeploy | null>
   if (!d) return null;
   return { environment: String(d.environment?.name ?? ""), status: String(d.status ?? ""), ref: d.ref ?? null, sha: d.sha ?? null, at: Date.parse(d.finished_at ?? d.created_at), url: d.environment?.external_url ?? null };
 }
+
+export type Change = { path: string; status: "A" | "M" | "D" | "R"; from?: string };
+
+/** Ce qui a changé depuis le dernier commit de l'espace de travail (ajoute tout à l'index au passage). */
+export async function stagedChanges(ws: Workspace): Promise<Change[]> {
+  await rm(join(ws.tree, ".git"), { recursive: true, force: true });
+  await git(ws, ["add", "-A"]);
+  const out = await git(ws, ["diff", "--cached", "--name-status", "-M", "-z"]);
+  const parts = out.split("\0").filter(Boolean), changes: Change[] = [];
+  for (let i = 0; i < parts.length;) {
+    const s = parts[i++]!;
+    if (s.startsWith("R") || s.startsWith("C")) { const from = parts[i++]!, to = parts[i++]!; changes.push({ path: to, status: "R", from }); }
+    else changes.push({ path: parts[i++]!, status: (s[0] === "A" || s[0] === "D" ? s[0] : "M") as Change["status"] });
+  }
+  return changes;
+}
+
+/** Le diff unifié (d'un fichier, ou de tout), plafonné. Le chemin est littéral : jamais un motif git. */
+export async function patchOf(ws: Workspace, path?: string, max = 300_000): Promise<{ diff: string; truncated: boolean }> {
+  const out = await git(ws, ["diff", "--cached", "-M", "--no-color", "--no-ext-diff", "--", ...(path ? [`:(literal)${path}`] : [])]);
+  return out.length > max ? { diff: out.slice(0, max), truncated: true } : { diff: out, truncated: false };
+}
+
+const clean = (s: string) => s.replace(/[<>\n\r\0]/g, "").trim().slice(0, 100) || "inconnu";
+
+/** Commit au nom de la personne (auteur) ; la plateforme reste le « committer ». */
+export async function commitAs(ws: Workspace, message: string, author: { name: string; email: string }) {
+  await git(ws, ["-c", `user.name=${cfg.gitAuthorName}`, "-c", `user.email=${cfg.gitAuthorEmail}`, "commit", "--quiet", `--author=${clean(author.name)} <${clean(author.email)}>`, "-m", message]);
+}
+
+/** Envoie la branche. Un refus parce que la branche a avancé ailleurs est dit clairement (jamais de force). */
+export async function pushBranch(p: Project, ws: Workspace, branch: string): Promise<void> {
+  try { await git(ws, ["push", "--quiet", "origin", branch], p.token, p.forge); }
+  catch (e: any) {
+    const text = scrub(String(e.stderr || e.message || ""), [p.token]);
+    if (/non-fast-forward|fetch first|rejected|stale info/i.test(text)) throw Object.assign(new Error("la branche a changé sur le dépôt depuis l'ouverture de l'éditeur : abandonne cette édition et rouvre-la"), { code: "NOT_FAST_FORWARD" });
+    throw new Error(text.split("\n").filter(Boolean).slice(-1)[0]?.slice(0, 200) ?? "envoi refusé");
+  }
+}

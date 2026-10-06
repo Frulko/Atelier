@@ -2,10 +2,11 @@ import { lstat, mkdir, readdir, readFile, realpath, rename, rm, writeFile } from
 import { dirname, join, sep } from "node:path";
 import { cfg } from "./config.ts";
 import {
-  allEditorSessionIds, countEditorSessions, deleteEditorSession, findEditorSession, getProjectById, getTaskInOrg, idleEditorSessions,
+  allEditorSessionIds, countEditorSessions, setEditorMr, updateTask, deleteEditorSession, findEditorSession, getProjectById, getTaskInOrg, idleEditorSessions,
   insertEditorSession, touchEditorSession, type EditorSession, type ProjectRow,
 } from "./db.ts";
-import { clone, cleanup, workspace } from "./git.ts";
+import { clone, cleanup, commitAs, openMergeRequest, patchOf, pushBranch, stagedChanges, workspace, type Change } from "./git.ts";
+import { runCheck } from "./sandbox.ts";
 import { rowToProject } from "./projects.ts";
 
 // Limites : l'éditeur écrit sur le disque du serveur à la demande d'un navigateur, donc tout est borné.
@@ -181,3 +182,68 @@ export async function sweepEditor(now = Date.now()) {
 }
 
 export const projectOf = (s: EditorSession) => getProjectById(s.project_id);
+
+/* ------------------------- phase 2 : changements, vérification, commit ------------------------- */
+
+const protectedHit = (p: ProjectRow, changes: Change[]) => {
+  const paths: string[] = JSON.parse(p.protected_paths);
+  return changes.filter((c) => paths.some((pp) => c.path.startsWith(pp) || (c.from ?? "").startsWith(pp))).map((c) => c.path);
+};
+
+/** Ce qui a changé dans cette session, fichier par fichier, avec ceux qui touchent un chemin protégé. */
+export async function changesOf(s: EditorSession, path?: string) {
+  touchEditorSession(s.id);
+  const ws = workspace(sessionDir(s.id));
+  const project = getProjectById(s.project_id);
+  const files = await stagedChanges(ws);
+  const flagged = project ? protectedHit(project, files) : [];
+  const patch = await patchOf(ws, path);
+  return { files: files.map((f) => ({ ...f, protected: flagged.includes(f.path) })), ...patch };
+}
+
+const checking = new Set<string>();
+
+/** La vérification du projet, lancée comme pour l'agent : dans un conteneur sans réseau, sur cet espace de travail. */
+export async function runSessionCheck(s: EditorSession): Promise<{ ok: boolean; output: string }> {
+  touchEditorSession(s.id);
+  const project = getProjectById(s.project_id);
+  if (!project) throw new EditorError(404, "projet introuvable");
+  if (checking.has(s.id)) throw new EditorError(409, "une vérification est déjà en cours");
+  checking.add(s.id);
+  try { return await runCheck(`atelier-edit-${s.id}-check`, treeOf(s.id), project.check_cmd); }
+  finally { checking.delete(s.id); }
+}
+
+/** Valider : commit au nom de la personne, envoi de la branche, demande de fusion si elle n'existe pas encore. Jamais de force, jamais de fusion. */
+export async function commitSession(s: EditorSession, user: { name: string | null; email: string }, rawMessage: unknown): Promise<{ commit: boolean; files: number; flagged: string[]; mrUrl: string | null }> {
+  touchEditorSession(s.id);
+  if (typeof rawMessage !== "string" || rawMessage.includes("\0") || !rawMessage.trim() || rawMessage.length > 2000) throw new EditorError(400, "message invalide (1 à 2000 caractères)");
+  const message = rawMessage.trim();
+  const project = getProjectById(s.project_id);
+  if (!project) throw new EditorError(404, "projet introuvable");
+  if (s.task_id) { const t = getTaskInOrg(s.task_id, s.org_id); if (!t || t.status === "queued" || t.status === "running") throw new EditorError(409, "l'agent travaille sur cette tâche : attends la fin de son tour"); }
+  const ws = workspace(sessionDir(s.id));
+  const changes = await stagedChanges(ws);
+  if (!changes.length) throw new EditorError(409, "aucune modification à valider");
+  const flagged = protectedHit(project, changes);
+  const p = rowToProject(project);
+  await commitAs(ws, `${message}\n\nModifié dans l'éditeur Atelier par ${user.email}`, { name: user.name || user.email.split("@")[0]!, email: user.email });
+  try { await pushBranch(p, ws, s.branch); }
+  catch (e: any) { throw new EditorError(e.code === "NOT_FAST_FORWARD" ? 409 : 502, e.message); }
+
+  let mrUrl: string | null = s.mr_url;
+  if (s.task_id) {
+    // la proposition de la tâche s'enrichit : on cumule les fichiers et on garde l'alerte des chemins protégés
+    const t = getTaskInOrg(s.task_id, s.org_id)!;
+    const all = [...new Set([...(JSON.parse(t.files_json ?? "[]") as string[]), ...changes.map((c) => c.path)])];
+    updateTask(t.id, { files_json: JSON.stringify(all.slice(0, 200)), flagged: Math.max(t.flagged, flagged.length) });
+    mrUrl = t.mr_url;
+  } else if (!mrUrl && p.forge !== "none") {
+    const title = `${flagged.length ? "[REVUE REQUISE] " : ""}atelier : ${message.split("\n")[0]!.slice(0, 70)}`;
+    const description = [`Modifié à la main dans l'éditeur par ${user.email}.`, "", `Fichiers modifiés (${changes.length}) :`, ...changes.map((c) => `- ${c.path}`),
+      ...(flagged.length ? ["", "⚠️ **Chemins protégés touchés — relecture humaine obligatoire :**", ...flagged.map((f) => `- ${f}`)] : [])].join("\n");
+    mrUrl = await openMergeRequest(p, s.branch, title, description).catch(() => null); // la branche est partie : un échec ici ne la défait pas
+    if (mrUrl) setEditorMr(s.id, mrUrl);
+  }
+  return { commit: true, files: changes.length, flagged, mrUrl };
+}
