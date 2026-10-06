@@ -13,6 +13,7 @@ import { projectsQuery } from "../../lib/queries";
 import { useOrg } from "../../lib/useOrg";
 import { editorApi, type FileChange } from "./api";
 import { FileTree } from "./FileTree";
+import { QuickOpen } from "./QuickOpen";
 import { languageOf, monaco } from "./monaco";
 
 const route = getRouteApi("/o/$orgId/projects/$projectId/editor");
@@ -58,6 +59,7 @@ export function EditorPage() {
   const [panel, setPanel] = useState<"changes" | "check">("changes");
   const [picked, setPicked] = useState<string | null>(null);
   const [message, setMessage] = useState("");
+  const [quick, setQuick] = useState(false);
 
   const changes = useQuery({ queryKey: ["editor-changes", sid], queryFn: () => editorApi.changes(orgId, sid!), enabled: !!sid, refetchOnWindowFocus: false });
   const refreshChanges = useCallback(() => { void qc.invalidateQueries({ queryKey: ["editor-changes", sid] }); }, [qc, sid]);
@@ -143,6 +145,11 @@ export function EditorPage() {
     onError: (e) => toast(errorText(e), "bad"),
   });
 
+  useEffect(() => { // Cmd/Ctrl+P : aller au fichier (avant que le navigateur n'ouvre « Imprimer »)
+    const key = (e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "p") { e.preventDefault(); setQuick(true); } };
+    addEventListener("keydown", key); return () => removeEventListener("keydown", key);
+  }, []);
+
   useEffect(() => {
     const warn = (e: BeforeUnloadEvent) => { if (dirty.size) e.preventDefault(); };
     addEventListener("beforeunload", warn); return () => removeEventListener("beforeunload", warn);
@@ -167,7 +174,7 @@ export function EditorPage() {
         </div>
         <ConfirmButton variant="danger" icon={<X className="size-4" />} onConfirm={() => discard.mutate()} loading={discard.isPending}>Abandonner l'édition</ConfirmButton>
       </div>
-      <p className="rounded-lg border border-line bg-subtle px-3 py-2 text-[13px] text-muted">Tu édites une copie privée sur la branche <b className="font-mono text-ink">{s.branch}</b>. Rien n'est fusionné : « Valider » envoie la branche, et quelqu'un doit la relire. Les brouillons s'enregistrent tout seuls ; l'espace expire après 2 h d'inactivité.</p>
+      <p className="rounded-lg border border-line bg-subtle px-3 py-2 text-[13px] text-muted">Tu édites une copie privée sur la branche <b className="font-mono text-ink">{s.branch}</b>. Rien n'est fusionné : « Valider » envoie la branche, et quelqu'un doit la relire. Les brouillons s'enregistrent tout seuls ; l'espace expire après 2 h d'inactivité. <kbd className="rounded border border-line bg-raised px-1 font-mono text-xs">Ctrl/⌘ P</kbd> pour aller à un fichier.</p>
 
       <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[15rem_1fr]">
         <div className="min-h-0 overflow-hidden rounded-xl border border-line bg-raised">
@@ -226,6 +233,7 @@ export function EditorPage() {
           </div>
         </div>
       </div>
+    <QuickOpen org={orgId} session={s.id} open={quick} onClose={() => setQuick(false)} onPick={(p) => void openFile(p)} />
     </div>
   );
 }

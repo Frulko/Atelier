@@ -289,3 +289,23 @@ test("vérification : réservée à l'auteur et aux membres (l'exécution réell
   assert.equal((await call(cV, "POST", `${A}/${s.id}/check`)).status, 403);
   assert.equal((await call(cB, "POST", `${A}/${s.id}/check`)).status, 404);
 });
+
+test("recherche rapide de fichier : sous-suite de lettres, liens et .git ignorés, plafonnée, privée", async () => {
+  await ed.sweepEditor(Date.now() + ed.IDLE_MS + 1000);
+  const s = await open(cM, pA);
+  const find = async (c: string, q: string) => call(c, "GET", `${A}/${s.id}/search?q=${encodeURIComponent(q)}`);
+  const hit = (await (await find(cM, "sap")).json()) as { paths: string[] };
+  assert.equal(hit.paths[0], "src/app.js");                                                   // s…a…p dans src/app.js
+  const idx = (await (await find(cM, "INDEX")).json()) as { paths: string[] };               // insensible à la casse
+  assert.deepEqual(idx.paths, ["index.html"]);
+  const all = (await (await find(cM, "")).json()) as { paths: string[] };
+  assert.ok(all.paths.includes("index.html") && all.paths.includes("src/app.js"));
+  assert.ok(!all.paths.some((p) => p.startsWith(".git") || p.includes("lien-")));              // ni .git ni liens
+  assert.deepEqual(((await (await find(cM, "zzzzqq")).json()) as { paths: string[] }).paths, []);
+  assert.equal((await find(cM, "x".repeat(500))).status, 200);                                 // requête démesurée : tronquée, pas d'erreur
+  assert.equal((await find(cS, "app")).status, 404);                                           // privée
+  assert.equal((await find(cV, "app")).status, 403);
+  for (let i = 0; i < 60; i++) await put(cM, s.id, `bulk/f${i}.txt`.replace("bulk/", ""), "x");
+  const many = (await (await find(cM, "f")).json()) as { paths: string[]; truncated: boolean };
+  assert.equal(many.paths.length, 50); assert.equal(many.truncated, true);
+});

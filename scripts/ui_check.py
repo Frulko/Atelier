@@ -151,6 +151,13 @@ with sync_playwright() as p:
     expect(admin.get_by_text(re.compile("Tu édites une copie privée"))).to_be_visible()
     tree.get_by_text("server.js").click()
     expect(admin.get_by_role("tab", name=re.compile("server.js"))).to_be_visible()
+    admin.keyboard.press("ControlOrMeta+p")                                          # quick open
+    qo = admin.get_by_role("dialog")
+    qo.get_by_label("Nom du fichier").fill("utl")
+    expect(qo.get_by_role("option", name=re.compile("utils.js"))).to_be_visible()
+    admin.keyboard.press("Enter")
+    expect(admin.get_by_role("tab", name=re.compile("utils.js"))).to_be_visible()
+    admin.get_by_role("tab", name=re.compile("server.js")).click()
     admin.locator(".monaco-editor").first.click()
     admin.keyboard.press("ControlOrMeta+End")
     admin.keyboard.type(f"\n// édité à la main {RUN}\n")
@@ -251,6 +258,7 @@ with sync_playwright() as p:
     expect(admin.locator("pre").first).to_be_visible()                                       # the fenced code block is rendered
     expect(admin.get_by_text(f"horaires-{RUN}").first).to_be_visible()                      # the sent message keeps its chip
     os.unlink(horaires)
+    expect(admin.get_by_role("link", name="Voir dans le projet")).to_be_visible()             # back to the project from an organization-level chat
     shot(admin, "05c-conversation")
     nav(admin, "Conversations")
     expect(admin.get_by_text(f"Quel ton pour la page Contact {RUN}").first).to_be_visible()

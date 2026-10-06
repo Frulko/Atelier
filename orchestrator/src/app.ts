@@ -14,7 +14,7 @@ import { FailureLimiter } from "./ratelimit.ts";
 import { can, canAssign, canTouch, ROLES, type Action } from "./access.ts";
 import { hashInviteToken, INVITE_TTL_MS, newInviteToken } from "./invites.ts";
 import { getEditorSession, touchEditorSession, type EditorSession } from "./db.ts";
-import { changesOf, commitSession, discardSession, EditorError, runSessionCheck, fileOp, IDLE_MS, listDir, openSession, readText, safeRel, writeText } from "./editor.ts";
+import { findFiles, changesOf, commitSession, discardSession, EditorError, runSessionCheck, fileOp, IDLE_MS, listDir, openSession, readText, safeRel, writeText } from "./editor.ts";
 import { cancel, newId } from "./pipeline.ts";
 import { securityHeaders, serveStatic } from "./static.ts";
 import { followUp, MAX_TURNS, startTask } from "./start.ts";
@@ -255,7 +255,7 @@ export function createApp() {
 
       // ---- ressources d'une organisation : /api/orgs/:org/...
       // ---- éditeur de code : /api/orgs/:org/editor/sessions[/:id][/tree|/file|/files]
-      const ed = /^\/api\/orgs\/([0-9a-f]{16})\/editor\/sessions(?:\/([0-9a-f]{16}))?(?:\/(tree|file|files|diff|check|commit))?$/.exec(url.pathname);
+      const ed = /^\/api\/orgs\/([0-9a-f]{16})\/editor\/sessions(?:\/([0-9a-f]{16}))?(?:\/(tree|file|files|diff|check|commit|search))?$/.exec(url.pathname);
       if (ed) {
         const [, orgId, sid, sub] = ed;
         const a = access(user, orgId, "task:create"); // éditer vaut lancer une tâche : membre au moins, un lecteur n'a rien ici
@@ -279,6 +279,7 @@ export function createApp() {
             if (!sub && req.method === "GET") { touchEditorSession(s.id); return json(res, 200, sessionJson(s)); }
             if (!sub && req.method === "DELETE") { await discardSession(s); log("editor.discard", { type: "project", id: s.project_id }, { branch: s.branch }); return json(res, 200, { ok: true }); }
             if (sub === "tree" && req.method === "GET") return json(res, 200, await listDir(s, safeRel(url.searchParams.get("path") ?? "", { allowRoot: true })));
+            if (sub === "search" && req.method === "GET") return json(res, 200, await findFiles(s, url.searchParams.get("q") ?? ""));
             if (sub === "file" && req.method === "GET") return json(res, 200, await readText(s, safeRel(url.searchParams.get("path"))));
             if (sub === "file" && req.method === "PUT") { const b = await body(req, 1_600_000); return json(res, 200, await writeText(s, safeRel(b.path), b.content)); }
             if (sub === "diff" && req.method === "GET") { const q = url.searchParams.get("path"); return json(res, 200, await changesOf(s, q ? safeRel(q) : undefined)); }

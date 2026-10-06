@@ -111,6 +111,7 @@ POST   /api/orgs/:org/projects/:id/refresh                        member+  check
 POST   /api/orgs/:org/editor/sessions { projectId, taskId? }      member+  open or resume a private workspace on a new branch (or a done task's branch)
 GET    /api/orgs/:org/editor/sessions/:id                         author  state and expiry; anyone else gets 404
 GET    /api/orgs/:org/editor/sessions/:id/tree?path=              one directory, folders first, `.git` never listed
+GET    /api/orgs/:org/editor/sessions/:id/search?q=               quick open: up to 50 file paths matching the letters
 GET    /api/orgs/:org/editor/sessions/:id/file?path=              text only, 1 MB
 PUT    /api/orgs/:org/editor/sessions/:id/file { path, content }  save a draft
 POST   /api/orgs/:org/editor/sessions/:id/files { op: create | rename | delete, … }

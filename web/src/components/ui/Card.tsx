@@ -21,11 +21,11 @@ export function Section({ title, hint, actions, children, className, index = 0 }
   );
 }
 
-export function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: ReactNode; actions?: ReactNode }) {
+export function PageHeader({ title, subtitle, actions, compact }: { title: string; subtitle?: ReactNode; actions?: ReactNode; compact?: boolean }) {
   return (
     <header className="rise mb-8 flex flex-wrap items-end justify-between gap-4">
       <div>
-        <h1 className="font-display text-3xl leading-tight text-ink">{title}</h1>
+        <h1 className={`font-display leading-tight text-ink ${compact ? "line-clamp-2 text-2xl" : "text-3xl"}`}>{title}</h1>
         {subtitle && <p className="mt-1.5 max-w-2xl text-[15px] text-muted">{subtitle}</p>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}

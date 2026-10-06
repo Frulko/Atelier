@@ -93,6 +93,32 @@ export async function listDir(s: EditorSession, rel: string): Promise<{ entries:
   return { entries, truncated: names.length > MAX_ENTRIES };
 }
 
+/** Recherche rapide d'un fichier par son chemin (sous-suite de lettres, comme « Cmd+P ») : liens et .git ignorés, résultats plafonnés. */
+export async function findFiles(s: EditorSession, query: unknown): Promise<{ paths: string[]; truncated: boolean }> {
+  touchEditorSession(s.id);
+  const q = typeof query === "string" ? query.toLowerCase().slice(0, 100) : "";
+  const root = await realpath(treeOf(s.id)).catch(() => { throw new EditorError(410, "cette session n'existe plus"); });
+  const hits: { path: string; score: number }[] = []; let seen = 0, truncated = false;
+  const score = (p: string) => { // sous-suite : chaque lettre de la requête, dans l'ordre ; plus c'est tassé et proche de la fin (le nom), mieux c'est
+    const low = p.toLowerCase(); let at = -1, first = -1, gaps = 0;
+    for (const c of q) { const i = low.indexOf(c, at + 1); if (i < 0) return -1; if (first < 0) first = i; else gaps += i - at - 1; at = i; }
+    return 1000 - gaps * 3 - (p.length - (p.lastIndexOf("/") + 1)) - (low.lastIndexOf("/") > first ? 20 : 0);
+  };
+  const walk = async (dir: string, rel: string): Promise<void> => {
+    for (const e of await readdir(dir, { withFileTypes: true })) {
+      if (truncated) return;
+      if (e.isSymbolicLink() || e.name === ".git" || e.name === "node_modules") continue;
+      const r = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) await walk(join(dir, e.name), r);
+      else if (++seen > 20_000) { truncated = true; return; }
+      else { const sc = q ? score(r) : 0; if (sc >= 0) hits.push({ path: r, score: sc }); }
+    }
+  };
+  await walk(root, "");
+  hits.sort((a, b) => b.score - a.score || a.path.localeCompare(b.path));
+  return { paths: hits.slice(0, 50).map((h) => h.path), truncated: truncated || hits.length > 50 };
+}
+
 const isBinary = (b: Buffer) => b.subarray(0, 8000).includes(0);
 
 export async function readText(s: EditorSession, rel: string): Promise<{ path: string; content: string; size: number }> {

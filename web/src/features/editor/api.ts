@@ -14,6 +14,7 @@ export const editorApi = {
   read: (org: string, id: string, path: string) => api.get<{ path: string; content: string; size: number }>(`${base(org, id)}/file?path=${encodeURIComponent(path)}`),
   save: (org: string, id: string, path: string, content: string) => api.put<{ path: string; size: number }>(`${base(org, id)}/file`, { path, content }),
   op: (org: string, id: string, body: { op: "create"; path: string; type: "file" | "dir" } | { op: "rename"; from: string; to: string } | { op: "delete"; path: string }) => api.post(`${base(org, id)}/files`, body),
+  search: (org: string, id: string, q: string) => api.get<{ paths: string[]; truncated: boolean }>(`${base(org, id)}/search?q=${encodeURIComponent(q)}`),
   changes: (org: string, id: string) => api.get<Changes>(`${base(org, id)}/diff`),
   check: (org: string, id: string) => api.post<{ ok: boolean; output: string }>(`${base(org, id)}/check`),
   commit: (org: string, id: string, message: string) => api.post<CommitResult>(`${base(org, id)}/commit`, { message }),

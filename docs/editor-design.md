@@ -1,6 +1,6 @@
 # Embedded code editor
 
-**Status:** shipped. The interface lives under a project (`/o/:org/projects/:id/editor`) and a finished task opens in it ("Open in the editor"). Not built: quick open (`Cmd+P`), project-wide search, a terminal and completions beyond Monaco's built-ins.
+**Status:** shipped. The interface lives under a project (`/o/:org/projects/:id/editor`) and a finished task opens in it ("Open in the editor"). Quick open (`Ctrl/⌘ P`, a subsequence match over file paths) is there. Not built: search inside files, a terminal and completions beyond Monaco's built-ins.
 
 Atelier lets people change software by talking to an agent. Some people — and some changes — want the opposite: open a file, fix a sentence or a colour by hand, and propose it for review without installing anything. This page designs an **editor in the browser** (a small VS Code) that edits a project's code and commits it, under the same review rules as the agent.
 

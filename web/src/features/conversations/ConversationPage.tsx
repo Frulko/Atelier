@@ -27,6 +27,7 @@ import { useScope } from "../../lib/scope";
 
 export function ConversationPage() {
   const { orgId } = useOrg();
+  const scope = useScope();
   const { conversationId } = useParams({ strict: false }) as { conversationId: string };
   const q = useQuery(conversationQuery(orgId, conversationId));
   if (q.isPending) return <Skeleton className="h-80" />;
@@ -34,7 +35,7 @@ export function ConversationPage() {
   const { conversation: c, messages, task } = q.data;
   return (
     <>
-      <PageHeader title={c.title} subtitle={<>{c.mode === "chat" ? "Discussion privée avec l'assistant" : "Tâche"}{c.projectName ? ` · ${c.projectName}` : ""}</>}
+      <PageHeader compact title={c.title} subtitle={<>{c.mode === "chat" ? "Discussion privée avec l'assistant" : "Tâche"}{c.projectName ? ` · ${c.projectName}` : ""}{c.projectId && !scope.projectId && <> · <Link to="/o/$orgId/projects/$projectId/conversations/$conversationId" params={{ orgId, projectId: c.projectId, conversationId: c.id }} search={{}} className="font-medium text-accent hover:underline">Voir dans le projet</Link></>}</>}
         actions={c.mode === "chat" ? <DeleteButton id={c.id} /> : task ? <Link to="/o/$orgId/tasks/$taskId" params={{ orgId, taskId: task.id }}><Button>Voir la tâche</Button></Link> : undefined} />
       {c.mode === "chat"
         ? <ChatWindow key={c.id} conversation={c} initial={messages} />
