@@ -1,5 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { getRouteApi, Link, useNavigate } from "@tanstack/react-router";
+import { useScope } from "../../lib/scope";
 import { Bot, ListChecks, MessageSquare, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Badge } from "../../components/ui/Badge";
@@ -24,6 +25,7 @@ const MODES: { id: Mode; label: string; hint: string; icon: typeof Bot }[] = [
 export function NewConversationDialog({ open, onClose, initial, defaultProject }: { open: boolean; onClose: () => void; initial?: { mode: Mode; text: string }; defaultProject?: string }) {
   const { orgId, role } = useOrg();
   const navigate = useNavigate();
+  const scope = useScope();
   const projects = useQuery(projectsQuery(orgId));
   const canTask = atLeast(role, "member");
   const [mode, setMode] = useState<Mode>(initial?.mode ?? "chat");
@@ -37,7 +39,7 @@ export function NewConversationDialog({ open, onClose, initial, defaultProject }
       invalidateOrg(orgId, "conversations"); invalidateOrg(orgId, "tasks");
       const first = mode === "chat" && text.trim() ? text.trim() : undefined;
       setText(""); onClose();
-      navigate({ to: "/o/$orgId/conversations/$conversationId", params: { orgId, conversationId: conversation.id }, search: first ? { first } : {} });
+      navigate(scope.conversation(conversation.id, first ? { first } : {}) as never);
     },
   });
   return (

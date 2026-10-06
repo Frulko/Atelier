@@ -97,6 +97,12 @@ const projectTasksRoute = createRoute({ getParentRoute: () => projectRoute, path
 const projectConversationsRoute = createRoute({ getParentRoute: () => projectRoute, path: "conversations", component: ProjectConversations });
 const projectKnowledgeRoute = createRoute({ getParentRoute: () => projectRoute, path: "knowledge", component: ProjectKnowledge });
 const projectSettingsRoute = createRoute({ getParentRoute: () => projectRoute, path: "settings", component: ProjectSettings });
+const projectTaskRoute = createRoute({ getParentRoute: () => projectRoute, path: "tasks/$taskId", component: TaskDetailPage });
+const projectConversationRoute = createRoute({
+  getParentRoute: () => projectRoute, path: "conversations/$conversationId",
+  component: lazyRouteComponent(() => import("./features/conversations/ConversationPage"), "ConversationPage"),
+  validateSearch: (s: Record<string, unknown>) => compact({ first: str(s.first) }),
+});
 const editorRoute = createRoute({
   getParentRoute: () => projectRoute, path: "editor", beforeLoad: ({ context, params }) => { if (!atLeast(context.role, "member")) throw redirect({ to: "/o/$orgId", params: { orgId: params.orgId } }); },
   component: lazyRouteComponent(() => import("./features/editor/EditorPage"), "EditorPage"),
@@ -115,7 +121,7 @@ const accountRoute = child("account", AccountPage);
 
 const routeTree = rootRoute.addChildren([
   loginRoute, inviteRoute, indexRoute,
-  orgRoute.addChildren([overviewRoute, conversationsRoute, conversationRoute, tasksRoute, taskRoute, projectsRoute, projectRoute.addChildren([projectOverviewRoute, projectTasksRoute, projectConversationsRoute, projectKnowledgeRoute, editorRoute, projectSettingsRoute]), knowledgeRoute, guideRoute, teamRoute, integrationsRoute, usageRoute, auditRoute, settingsRoute, accountRoute]),
+  orgRoute.addChildren([overviewRoute, conversationsRoute, conversationRoute, tasksRoute, taskRoute, projectsRoute, projectRoute.addChildren([projectOverviewRoute, projectTasksRoute, projectConversationsRoute, projectConversationRoute, projectTaskRoute, projectKnowledgeRoute, editorRoute, projectSettingsRoute]), knowledgeRoute, guideRoute, teamRoute, integrationsRoute, usageRoute, auditRoute, settingsRoute, accountRoute]),
 ]);
 
 export const router = createRouter({ routeTree, context: { queryClient: undefined as unknown as QueryClient }, defaultPreload: "intent", scrollRestoration: true });

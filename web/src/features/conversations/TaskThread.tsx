@@ -13,6 +13,8 @@ import { invalidateOrg, taskQuery } from "../../lib/queries";
 import type { ConversationDetail } from "../../lib/types";
 import { useOrg } from "../../lib/useOrg";
 import { EventRow } from "../tasks/EventRow";
+import { ScopedLink } from "../../components/ui/ScopedLink";
+import { useScope } from "../../lib/scope";
 
 /**
  * Une tâche vue comme une conversation : chaque message de la personne ouvre un « tour » de l'agent, dont le journal
@@ -21,6 +23,7 @@ import { EventRow } from "../tasks/EventRow";
  */
 export function TaskThread({ detail }: { detail: ConversationDetail }) {
   const { orgId, me, isAdmin } = useOrg();
+  const scope = useScope();
   const { conversation: c, messages } = detail;
   const taskId = c.taskId!;
   const events = useTaskEvents(orgId, taskId);
@@ -52,7 +55,7 @@ export function TaskThread({ detail }: { detail: ConversationDetail }) {
           {t.status === "done" && canFollowUp && c.projectId && (
             <Link to="/o/$orgId/projects/$projectId/editor" params={{ orgId, projectId: c.projectId }} search={{ task: taskId }} className="text-[13px] font-medium text-accent hover:underline">Ouvrir dans l'éditeur</Link>
           )}
-          <Link to="/o/$orgId/tasks/$taskId" params={{ orgId, taskId }} className="ml-auto text-[13px] font-medium text-muted hover:text-ink">Détail de la tâche</Link>
+          <ScopedLink dest={scope.task(taskId)} className="ml-auto text-[13px] font-medium text-muted hover:text-ink">Détail de la tâche</ScopedLink>
         </Card>
       )}
       <Card className="p-4 sm:p-6">

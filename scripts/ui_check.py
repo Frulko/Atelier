@@ -127,6 +127,14 @@ with sync_playwright() as p:
         expect(admin).to_have_url(re.compile(f"projects/[0-9a-f]+{url}$"))
         expect(side).to_be_visible()                                                # the menu stays where we go
         expect(crumbs).to_contain_text(label)
+    side.get_by_role("link", name=re.compile("^Conversations")).click()             # opening a conversation keeps the project context
+    admin.get_by_role("main").get_by_role("link").filter(has_text="casse le projet").first.click()
+    expect(admin).to_have_url(re.compile(r"projects/[0-9a-f]+/conversations/[0-9a-f]+$"))
+    expect(side).to_be_visible(); expect(crumbs).to_contain_text("Conversation"); expect(crumbs).to_contain_text("Todo API (Node)")
+    admin.get_by_role("link", name="Détail de la tâche").click()                     # and so does the task detail
+    expect(admin).to_have_url(re.compile(r"projects/[0-9a-f]+/tasks/[0-9a-f]+$"))
+    expect(side).to_be_visible(); expect(crumbs).to_contain_text("Tâche")
+    side.get_by_role("link", name=re.compile("^Tâches")).click()
     admin.get_by_role("button", name="Nouveau", exact=True).first.click()           # one button, two modes: task or discussion
     dlg = admin.get_by_role("dialog")
     expect(dlg.get_by_role("radio", name="Discuter")).to_be_visible()

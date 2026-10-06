@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { getRouteApi, Link, useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { ArrowLeft, ExternalLink, FileCode2, GitBranch, RotateCcw, ShieldAlert, Square } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { Avatar } from "../../components/ui/Avatar";
@@ -12,13 +12,13 @@ import { useToast } from "../../components/ui/Toast";
 import { api } from "../../lib/api";
 import { useTaskEvents } from "../../lib/events";
 import { EventRow } from "./EventRow";
+import { useScope } from "../../lib/scope";
 import { fmtDateTime, fmtDuration, fmtUsd, parseFiles, relTime } from "../../lib/format";
 import { isActive } from "../../lib/labels";
 import { invalidateOrg, taskQuery } from "../../lib/queries";
 import { useOrg } from "../../lib/useOrg";
 import type { Task } from "../../lib/types";
 
-const route = getRouteApi("/o/$orgId/tasks/$taskId");
 
 function Meta({ label, children }: { label: string; children: React.ReactNode }) {
   return <div><dt className="label">{label}</dt><dd className="mt-1.5 text-[15px] text-ink">{children}</dd></div>;
@@ -26,7 +26,8 @@ function Meta({ label, children }: { label: string; children: React.ReactNode })
 
 export function TaskDetailPage() {
   const { orgId, me, isAdmin, isMember } = useOrg();
-  const { taskId } = route.useParams();
+  const { taskId } = useParams({ strict: false }) as { taskId: string };
+  const scope = useScope();
   const navigate = useNavigate();
   const toast = useToast();
   const q = useQuery(taskQuery(orgId, taskId));
@@ -44,7 +45,7 @@ export function TaskDetailPage() {
   });
   const retry = useMutation({
     mutationFn: () => api.post<Task>(`/api/orgs/${orgId}/tasks/${taskId}/retry`),
-    onSuccess: (n) => { invalidateOrg(orgId, "tasks"); invalidateOrg(orgId, "conversations"); toast("Nouvelle tâche lancée."); navigate({ to: "/o/$orgId/tasks/$taskId", params: { orgId, taskId: n.id } }); },
+    onSuccess: (n) => { invalidateOrg(orgId, "tasks"); invalidateOrg(orgId, "conversations"); toast("Nouvelle tâche lancée."); navigate(scope.task(n.id) as never); },
     onError: (e) => toast(e instanceof Error ? e.message : "Échec", "bad"),
   });
 

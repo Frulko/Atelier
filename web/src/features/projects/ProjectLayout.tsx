@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { getRouteApi, Link, Outlet, useMatchRoute, useNavigate } from "@tanstack/react-router";
+import { getRouteApi, Link, Outlet, useMatchRoute, useNavigate, useRouterState } from "@tanstack/react-router";
 import clsx from "clsx";
 import { BookOpen, Code2, ExternalLink, GitBranch, LayoutDashboard, ListChecks, MessageSquare, Pencil, Plus, Settings, type LucideIcon } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -39,6 +39,7 @@ export function ProjectLayout() {
   const [editing, setEditing] = useState(false);
   const p = projects.data?.find((x) => x.id === projectId);
   const inEditor = !!matchRoute({ to: "/o/$orgId/projects/$projectId/editor", params: { orgId, projectId } });
+  const detail = !!matchRoute({ to: "/o/$orgId/projects/$projectId/conversations/$conversationId", params: { orgId, projectId, conversationId: "" }, fuzzy: true }) && !!useRouterState({ select: (s) => /\/(conversations|tasks)\/[^/]+$/.test(s.location.pathname) });
   const health = status.data?.find((x) => x.projectId === projectId)?.health;
   const knowledgeCount = (knowledge.data ?? []).filter((k) => k.projectId === projectId || k.projectId === null).length;
   const ctx = useMemo(() => (p ? { project: p, openNew: () => setCreating(true), openEdit: () => setEditing(true) } : null), [p]);
@@ -76,7 +77,7 @@ export function ProjectLayout() {
         </nav>
 
         <div className="min-w-0">
-          {!inEditor && (
+          {!inEditor && !detail && (
             <header className="rise mb-6 flex flex-wrap items-start justify-between gap-4" style={{ ["--i" as string]: 1 }}>
               <div className="min-w-0">
                 <div className="mb-2 flex flex-wrap items-center gap-2">

@@ -1,6 +1,6 @@
 import { useChat } from "@ai-sdk/react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { getRouteApi, Link, useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { Bot, BookIcon, ChevronDownIcon, Copy, ListChecks, Paperclip, RotateCw, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
@@ -21,12 +21,12 @@ import { conversationQuery, invalidateOrg } from "../../lib/queries";
 import type { Conversation } from "../../lib/types";
 import { useOrg } from "../../lib/useOrg";
 import { TaskThread } from "./TaskThread";
+import { useScope } from "../../lib/scope";
 
-const route = getRouteApi("/o/$orgId/conversations/$conversationId");
 
 export function ConversationPage() {
   const { orgId } = useOrg();
-  const { conversationId } = route.useParams();
+  const { conversationId } = useParams({ strict: false }) as { conversationId: string };
   const q = useQuery(conversationQuery(orgId, conversationId));
   if (q.isPending) return <Skeleton className="h-80" />;
   if (q.error) return <ErrorBox error={q.error} retry={() => q.refetch()} />;
@@ -44,10 +44,11 @@ export function ConversationPage() {
 
 function DeleteButton({ id }: { id: string }) {
   const { orgId } = useOrg();
+  const scope = useScope();
   const navigate = useNavigate();
   const del = useMutation({
     mutationFn: () => api.del(`/api/orgs/${orgId}/conversations/${id}`),
-    onSuccess: () => { invalidateOrg(orgId, "conversations"); navigate({ to: "/o/$orgId/conversations", params: { orgId } }); },
+    onSuccess: () => { invalidateOrg(orgId, "conversations"); navigate(scope.conversations() as never); },
   });
   return <Button variant="ghost" icon={<Trash2 className="size-4" />} loading={del.isPending} onClick={() => del.mutate()}>Supprimer</Button>;
 }
@@ -96,7 +97,8 @@ const withoutFiles = (t: string) => t.replace(/Fichier joint « .+? » :\n(`{3,}
 
 function ChatWindow({ conversation, initial }: { conversation: Conversation; initial: UIMessage[] }) {
   const { orgId } = useOrg();
-  const search = route.useSearch();
+  const search = useSearch({ strict: false }) as { first?: string };
+  const scope = useScope();
   const navigate = useNavigate();
   const toast = useToast();
   const transport = useMemo(() => new DefaultChatTransport({
@@ -123,7 +125,7 @@ function ChatWindow({ conversation, initial }: { conversation: Conversation; ini
   const lastUser = [...messages].reverse().find((m) => m.role === "user");
   const promote = useMutation({
     mutationFn: (prompt: string) => api.post<{ conversation: Conversation }>(`/api/orgs/${orgId}/conversations`, { mode: "task", projectId: conversation.projectId, text: prompt, parentId: conversation.id }),
-    onSuccess: ({ conversation: c }) => { invalidateOrg(orgId, "conversations"); invalidateOrg(orgId, "tasks"); navigate({ to: "/o/$orgId/conversations/$conversationId", params: { orgId, conversationId: c.id }, search: {} }); },
+    onSuccess: ({ conversation: c }) => { invalidateOrg(orgId, "conversations"); invalidateOrg(orgId, "tasks"); navigate(scope.conversation(c.id) as never); },
     onError: (e) => toast(errorText(e)),
   });
 

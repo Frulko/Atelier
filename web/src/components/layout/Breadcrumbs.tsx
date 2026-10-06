@@ -24,7 +24,11 @@ export function Breadcrumbs() {
     if (seg[0] === "projects" && seg[1]) {
       const name = projects.data?.find((p) => p.id === seg[1])?.name ?? "Projet";
       crumbs.push({ label: name, to: seg[2] ? "/o/$orgId/projects/$projectId" : undefined, params: { orgId, projectId: seg[1] } });
-      if (seg[2]) crumbs.push({ label: PROJECT_SECTION[seg[2]] ?? seg[2] });
+      if (seg[2]) {
+        const deeper = seg[3] && (seg[2] === "tasks" || seg[2] === "conversations");
+        crumbs.push({ label: PROJECT_SECTION[seg[2]] ?? seg[2], to: deeper ? `/o/$orgId/projects/$projectId/${seg[2]}` : undefined, params: { orgId, projectId: seg[1] } });
+        if (deeper) crumbs.push({ label: seg[2] === "tasks" ? "Tâche" : "Conversation" });
+      }
     } else if (seg[0] === "tasks" && seg[1]) crumbs.push({ label: "Tâche" });
     else if (seg[0] === "conversations" && seg[1]) crumbs.push({ label: "Conversation" });
   } else crumbs.push({ label: "Vue d'ensemble" });
