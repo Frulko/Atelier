@@ -62,7 +62,7 @@ To run it for real (your own projects, a real model, a real forge), see **[Deplo
 | **Real Claude agent**, **real GitLab MR**, **real GitHub PR** | ⚠️ implemented, **not yet exercised** (no key or forge in the dev environment) |
 | A full web application: overview, tasks, projects, team, integrations, usage, audit log, organization and account pages (light and dark, phone-ready) | ✅ working, driven in a real browser by the smoke test |
 | Organizations, members, invitations, projects, secrets, budget, audit log, sessions | ✅ working, API and UI |
-| Conversations: a streaming assistant (Vercel AI SDK, per-organization provider and model, set in the UI) with file attachments, a knowledge base, tasks as conversations with follow-up turns on the same branch | ✅ working, tested with a fake model (no real provider call yet) |
+| Conversations: a streaming assistant (Vercel AI SDK, per-organization provider and model, set in the UI) with file attachments, a knowledge base, tasks as conversations with follow-up turns on the same branch | ✅ working, tested with a fake model and a fake local provider (no real provider call yet) |
 | Dashboard health and git status, welcome tour, guide and guided first steps | ✅ working, driven in a real browser (forge deployments not exercised against a real forge) |
 | Embedded code editor (Monaco): private workspaces, autosaved drafts, diff, sandboxed check, commit and push, edit an agent's branch | ✅ working, driven in a real browser ([design](docs/editor-design.md)) |
 | SSO (OIDC, GitLab / GitHub sign-in), real-agent validation, previews | 🚧 next ([roadmap](docs/roadmap.md)) |

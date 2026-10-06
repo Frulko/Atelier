@@ -108,8 +108,11 @@ export function windowMessages(history: UIMessage[]): UIMessage[] {
   return out;
 }
 
+const unwrap = (e: unknown): unknown => { let x = e as { lastError?: unknown } | undefined; for (let i = 0; i < 3 && x?.lastError; i++) x = x.lastError as typeof x; return x; };
+
 /** Message d'erreur montré à la personne : jamais le texte brut du fournisseur (il peut contenir des détails internes). */
-export function friendlyError(e: unknown): string {
+export function friendlyError(raw: unknown): string {
+  const e = unwrap(raw); // le SDK enveloppe l'erreur du fournisseur après ses nouvelles tentatives
   const t = String((e as { message?: string })?.message ?? e).toLowerCase(), code = Number((e as { statusCode?: number })?.statusCode);
   if (code === 401 || code === 403 || /api key|authentication|unauthorized|invalid x-api-key/.test(t)) return "Le fournisseur a refusé la clé de l'organisation. Un administrateur peut la remplacer dans Intégrations.";
   if (code === 429 || /rate limit|overloaded|too many/.test(t)) return "Le fournisseur est saturé pour le moment. Réessaie dans un instant.";
@@ -139,11 +142,11 @@ export async function runChat(o: { res: ServerResponse; conv: ConversationRow; o
   const sources = sel.chosen.map((k) => ({ id: k.id, title: k.title }));
   const system = buildSystem(project, renderKnowledge(sel.chosen));
 
-  const result = streamText({ model: m.model, system, messages: await convertToModelMessages(windowMessages(history)), abortSignal: o.signal, maxOutputTokens: 4096 });
+  const result = streamText({ model: m.model, system, messages: await convertToModelMessages(windowMessages(history)), abortSignal: o.signal, maxOutputTokens: 4096, maxRetries: 1, onError: () => {} /* le SDK écrirait l'erreur brute dans les journaux : on journalise nous-mêmes, sans le texte */ });
   result.pipeUIMessageStreamToResponse(o.res, {
     originalMessages: history,
     messageMetadata: ({ part }) => (part.type === "start" ? { sources, model: m.modelId, provider: m.provider } : undefined),
-    onError: (e) => { console.warn(`chat: ${(e as Error)?.message ?? e}`); return friendlyError(e); },
+    onError: (e) => { const u = unwrap(e) as { statusCode?: number; name?: string }; console.warn(`chat: erreur du fournisseur (${u?.name ?? "inconnue"}, HTTP ${u?.statusCode ?? "?"})`); return friendlyError(e); }, // jamais le texte brut : il pourrait citer une clé
     onEnd: async ({ responseMessage, isAborted }) => {
       if (!responseMessage.parts.length) return; // rien n'a été produit : rien à enregistrer
       let usage: { inputTokens?: number; outputTokens?: number } = {};
