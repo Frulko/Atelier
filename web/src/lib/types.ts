@@ -16,6 +16,7 @@ export interface TaskFilters { status?: string; project?: string; user?: string;
 export interface Project {
   id: string; slug: string; name: string; repo: string; branch: string; forge: "gitlab" | "github" | "none";
   check: string; engine: string; protectedPaths: string[]; gitSecretId: string | null;
+  siteUrl: string | null; healthUrl: string | null;
 }
 export interface AccessCheck { ok: boolean; branchFound: boolean; error?: "auth" | "not_found" | "timeout" | "unreachable"; detail?: string; ms: number }
 
@@ -71,3 +72,13 @@ export interface Conversation {
 export interface ConversationPage { items: Conversation[]; total: number; limit: number; offset: number }
 export interface ChatSource { id: string; title: string }
 export interface ConversationDetail { conversation: Conversation; messages: import("ai").UIMessage<{ sources?: ChatSource[]; model?: string }>[]; task: Task | null }
+
+export interface ProjectStatus {
+  projectId: string; name: string; slug: string; repo: string; branch: string; forge: "gitlab" | "github" | "none";
+  siteUrl: string | null; healthUrl: string | null;
+  health: { ok: boolean; status: number | null; ms: number | null; error: string | null; checkedAt: number } | null;
+  uptime24h: number | null; checks24h: number; history: { ts: number; ok: boolean; ms: number | null }[];
+  git: { checkedAt: number; error: string | null; commit: { sha: string; subject: string; author: string; at: number } | null } | null;
+  deploy: { environment: string; status: string; ref: string | null; sha: string | null; at: number; url: string | null } | null;
+  lastTask: { id: string; status: Status; mr_url: string | null; created_at: number; finished_at: number | null } | null;
+}

@@ -1,7 +1,7 @@
 import { QueryClient, queryOptions, keepPreviousData } from "@tanstack/react-query";
 import { api, ApiError, qs } from "./api";
 import type {
-  ConversationDetail, ConversationPage, KnowledgeBrief, KnowledgeItem,
+  ConversationDetail, ConversationPage, ProjectStatus, KnowledgeBrief, KnowledgeItem,
   Activity, AuditFilters, AuditPage, Invitation, Me, Member, OrgDetail, Project, Secret, Session, Stats, Task, TaskFilters, TaskPage, Usage,
 } from "./types";
 import { isActive } from "./labels";
@@ -77,3 +77,6 @@ export const conversationQuery = (o: string, id: string) => queryOptions({
   queryFn: () => api.get<ConversationDetail>(`${org(o)}/conversations/${id}`),
   staleTime: 0,
 });
+
+/** Santé, dernier commit et déploiement de chaque projet. Le serveur contrôle en tâche de fond ; la page se met à jour chaque minute. */
+export const statusQuery = (o: string) => queryOptions({ queryKey: ["org", o, "status"], queryFn: () => api.get<ProjectStatus[]>(`${org(o)}/status`), refetchInterval: 60_000 });

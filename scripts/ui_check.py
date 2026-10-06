@@ -117,6 +117,17 @@ with sync_playwright() as p:
     admin.get_by_role("link").filter(has_text="Todo API (Node)").click()
     admin.get_by_role("button", name="Vérifier l'accès").click()
     expect(admin.get_by_text("Tout répond")).to_be_visible()                    # git ls-remote worked
+    admin.get_by_role("button", name="Modifier").click()                         # give the project a site address to watch
+    dlg = admin.get_by_role("dialog")
+    dlg.get_by_label("Adresse du site").fill("http://127.0.0.1:8080/healthz")   # seen from INSIDE the container
+    dlg.get_by_role("button", name="Enregistrer").click()
+    expect(admin.get_by_role("dialog")).to_have_count(0)
+    nav(admin, "Vue d'ensemble")                                                 # dashboard: health, last commit, refresh
+    card = admin.get_by_test_id("project-status-todo-api")
+    expect(card.get_by_text(re.compile(r"[0-9a-f]{7}")).first).to_be_visible(timeout=30000)   # last commit, read from the repository
+    card.get_by_role("button", name="Actualiser").click()
+    expect(card.get_by_text(re.compile("En ligne"))).to_be_visible()
+    shot(admin, "02b-dashboard-projects")
     nav(admin, "Projets")
     admin.get_by_role("button", name="Nouveau projet").click()
     dlg = admin.get_by_role("dialog")

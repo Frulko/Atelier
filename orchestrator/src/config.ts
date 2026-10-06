@@ -71,6 +71,8 @@ export const cfg = {
   allowLocalRepos: env("ATELIER_ALLOW_LOCAL_REPOS") === "1",
   /** Liste blanche optionnelle des hôtes git (ex. "gitlab.com,github.com,git.mon-domaine.fr"). Vide = tous. */
   gitHosts: (env("ATELIER_GIT_HOSTS", "") ?? "").split(",").map((h) => h.trim().toLowerCase()).filter(Boolean),
+  /** Surveillance : autorise les adresses privées/locales (réseau interne, démo). Les adresses « lien local » (métadonnées cloud) restent TOUJOURS refusées. */
+  healthAllowPrivate: env("ATELIER_HEALTH_ALLOW_PRIVATE") === "1",
   agentTimeoutS: Number(env("AGENT_TIMEOUT_S", "900")),
   maxAttempts: Number(env("MAX_ATTEMPTS", "3")),
   maxBudgetUsd: env("MAX_BUDGET_USD", "2")!,

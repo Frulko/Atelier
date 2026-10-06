@@ -16,6 +16,8 @@ import { hashInviteToken, INVITE_TTL_MS, newInviteToken } from "./invites.ts";
 import { cancel, newId } from "./pipeline.ts";
 import { securityHeaders, serveStatic } from "./static.ts";
 import { followUp, MAX_TURNS, startTask } from "./start.ts";
+import { projectStatuses } from "./db.ts";
+import { refreshProject } from "./monitor.ts";
 import { cleanAttachments, MAX_BODY_BYTES } from "./attachments.ts";
 import { CHAT_PROVIDERS, effectiveChat, MAX_MESSAGE_CHARS, MAX_MESSAGES, runChat, textOf, toUIMessage } from "./chat.ts";
 
@@ -76,6 +78,19 @@ const conversationJson = (c: ConversationRow) => ({
 });
 
 const limiter = new FailureLimiter();
+const refreshLimiter = new FailureLimiter(20, 60_000);
+/** Un projet de la page d'état : jamais de jeton ni de secret, seulement ce qui est affichable. */
+const statusJson = (s: ReturnType<typeof projectStatuses>[number]) => {
+  const r = s.row;
+  return {
+    projectId: r.id, name: r.name, slug: r.slug, repo: r.repo, branch: r.branch, forge: r.forge, siteUrl: r.site_url ?? null, healthUrl: r.health_url ?? null,
+    health: r.health_checked_at ? { ok: !!r.health_ok, status: r.health_status, ms: r.health_ms, error: r.health_error, checkedAt: r.health_checked_at } : null,
+    uptime24h: s.uptime24h, checks24h: s.checks24h, history: s.history.map((h) => ({ ts: h.ts, ok: !!h.ok, ms: h.ms })),
+    git: r.git_checked_at ? { checkedAt: r.git_checked_at, error: r.git_error, commit: r.commit_sha ? { sha: r.commit_sha, subject: r.commit_subject, author: r.commit_author, at: r.commit_at } : null } : null,
+    deploy: r.deploy_json ? JSON.parse(r.deploy_json) : null,
+    lastTask: s.lastTask,
+  };
+};
 const DUMMY_HASH = await hashPassword("mot de passe factice pour égaliser le temps de réponse");
 
 export function createApp() {
@@ -237,7 +252,7 @@ export function createApp() {
       }
 
       // ---- ressources d'une organisation : /api/orgs/:org/...
-      const o = /^\/api\/orgs\/([0-9a-f]{16})\/(projects|tasks|secrets|members|invitations|audit|stats|usage|knowledge|conversations)(?:\/([0-9a-f]{8,16}|preview))?(\/events|\/cancel|\/retry|\/verify|\/chat|\/messages)?$/.exec(url.pathname);
+      const o = /^\/api\/orgs\/([0-9a-f]{16})\/(projects|tasks|secrets|members|invitations|audit|stats|usage|knowledge|conversations|status)(?:\/([0-9a-f]{8,16}|preview))?(\/events|\/cancel|\/retry|\/verify|\/chat|\/messages|\/refresh)?$/.exec(url.pathname);
       if (o) {
         const [, orgId, kind, itemId, sub] = o;
         const deny = (a: Access) => a === "not_found" ? json(res, 404, { error: "introuvable" }) : json(res, 403, { error: "droits insuffisants" });
@@ -368,6 +383,23 @@ export function createApp() {
         }
 
         // ---------------- projets
+        // ---------------- état des projets : santé, dernier commit, déploiement (tableau de bord)
+        if (kind === "status" && req.method === "GET" && !itemId && !sub) {
+          const a = gate("task:read");
+          if (typeof a === "string") return deny(a);
+          return json(res, 200, projectStatuses(orgId).map(statusJson));
+        }
+        if (kind === "projects" && itemId && sub === "/refresh" && req.method === "POST") {
+          const a = gate("task:create"); // « actualiser » fait sortir des requêtes : réservé aux membres, et limité
+          if (typeof a === "string") return deny(a);
+          const row = getProjectInOrg(itemId, orgId);
+          if (!row) return json(res, 404, { error: "introuvable" });
+          if (refreshLimiter.blocked(`refresh:${orgId}`)) return json(res, 429, { error: "trop d'actualisations, réessaie dans un instant" });
+          refreshLimiter.fail(`refresh:${orgId}`);
+          await refreshProject(row);
+          return json(res, 200, statusJson(projectStatuses(orgId).find((s) => s.row.id === itemId)!));
+        }
+
         if (kind === "projects") {
           if (req.method === "GET" && !itemId) {
             const a = gate("task:read");
@@ -382,7 +414,7 @@ export function createApp() {
             const f = v.value as Required<typeof v.value>;
             if (f.gitSecretId && getSecretRow(f.gitSecretId, orgId)?.kind !== "git_token") return json(res, 400, { error: "secret git introuvable" });
             try {
-              const id = insertProject({ org_id: orgId, slug: f.slug, name: f.name, repo: f.repo, branch: f.branch, forge: f.forge, check_cmd: f.check, engine: f.engine, protected_paths: JSON.stringify(f.protectedPaths), git_secret_id: f.gitSecretId });
+              const id = insertProject({ org_id: orgId, slug: f.slug, name: f.name, repo: f.repo, branch: f.branch, forge: f.forge, check_cmd: f.check, engine: f.engine, protected_paths: JSON.stringify(f.protectedPaths), git_secret_id: f.gitSecretId, site_url: f.siteUrl, health_url: f.healthUrl });
               log("project.create", { type: "project", id }, { slug: f.slug, name: f.name });
               return json(res, 201, rowToJson(getProjectInOrg(id, orgId)!));
             } catch (e) {
@@ -414,6 +446,8 @@ export function createApp() {
               if (f.engine !== undefined) patch.engine = f.engine;
               if (f.protectedPaths !== undefined) patch.protected_paths = JSON.stringify(f.protectedPaths);
               if (f.gitSecretId !== undefined) patch.git_secret_id = f.gitSecretId;
+              if (f.siteUrl !== undefined) patch.site_url = f.siteUrl;
+              if (f.healthUrl !== undefined) patch.health_url = f.healthUrl;
               try { updateProject(itemId, orgId, patch); } catch (e) {
                 if (!/UNIQUE/.test(String(e))) throw e;
                 return json(res, 409, { error: "ce slug existe déjà" });

@@ -16,6 +16,7 @@ import { fmtDuration, fmtPct, fmtUsd, relTime } from "../../lib/format";
 import { isActive } from "../../lib/labels";
 import { orgQuery, projectsQuery, statsQuery, tasksQuery } from "../../lib/queries";
 import { useOrg } from "../../lib/useOrg";
+import { ProjectsHealth } from "./ProjectsHealth";
 import type { Task } from "../../lib/types";
 
 const PERIODS = [{ value: "7", label: "7 jours" }, { value: "30", label: "30 jours" }, { value: "90", label: "90 jours" }] as const;
@@ -85,6 +86,8 @@ export function OverviewPage() {
           <ul className="divide-y divide-line">{active.map((t) => <TaskRow key={t.id} t={t} orgId={orgId} />)}</ul>
         </Card>
       )}
+
+      <ProjectsHealth />
 
       <div className="mb-10 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {!s ? [0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-[8.4rem]" />) : (

@@ -25,12 +25,15 @@ export function ProjectForm({ project, onDone, onCancel }: { project?: Project; 
   const [check, setCheck] = useState(project?.check ?? "");
   const [paths, setPaths] = useState((project?.protectedPaths ?? []).join("\n"));
   const [secret, setSecret] = useState(project?.gitSecretId ?? "");
+  const [siteUrl, setSiteUrl] = useState(project?.siteUrl ?? "");
+  const [healthUrl, setHealthUrl] = useState(project?.healthUrl ?? "");
 
   const save = useMutation({
     mutationFn: () => {
       const body = {
         name, slug, repo, branch: branch || "main", check: check || "true", ...(forge ? { forge } : {}),
         protectedPaths: paths.split(/[\n,]/).map((s) => s.trim()).filter(Boolean), gitSecretId: secret || null,
+        siteUrl: siteUrl.trim() || null, healthUrl: healthUrl.trim() || null,
       };
       return project ? api.patch<Project>(`/api/orgs/${orgId}/projects/${project.id}`, body) : api.post<Project>(`/api/orgs/${orgId}/projects`, body);
     },
@@ -49,6 +52,10 @@ export function ProjectForm({ project, onDone, onCancel }: { project?: Project; 
         <Field label="Forge" hint="Laisse « Automatique » pour la déduire de l'URL.">
           {(id) => <Select id={id} value={forge} onChange={(e) => setForge(e.target.value)}><option value="">Automatique</option>{Object.entries(FORGE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select>}
         </Field>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Adresse du site" hint="Affichée sur le tableau de bord.">{(id) => <Input id={id} type="text" inputMode="url" autoCapitalize="off" spellCheck={false} value={siteUrl} onChange={(e) => setSiteUrl(e.target.value)} placeholder="https://www.monsite.fr" className="font-mono text-[13px]" />}</Field>
+        <Field label="Adresse de santé" hint="Testée chaque minute. Vide : l'adresse du site.">{(id) => <Input id={id} type="text" inputMode="url" autoCapitalize="off" spellCheck={false} value={healthUrl} onChange={(e) => setHealthUrl(e.target.value)} placeholder="https://www.monsite.fr/health" className="font-mono text-[13px]" />}</Field>
       </div>
       <Field label="Commande de vérification" hint="Lancée sans réseau dans le bac à sable pour valider une modification. Vide : aucune vérification.">
         {(id) => <Input id={id} value={check} onChange={(e) => setCheck(e.target.value)} placeholder="node --check app.js" className="font-mono text-[13px]" />}

@@ -36,6 +36,22 @@ const doers = users.filter((u) => db.roleOf(org, u.id) !== "viewer");
 const projects = db.listProjects(org);
 if (!projects.length) { console.log("Aucun projet : rien à amorcer."); process.exit(0); }
 
+// Adresses de site et historique de santé, pour que le tableau de bord montre un site en ligne, un site en panne et un projet non surveillé.
+// Les « sites » sont l'orchestrateur lui-même (en ligne) et un port fermé (en panne) : la démo n'a besoin d'aucun site réel.
+{
+  const demoSites = { "boulangerie": "http://127.0.0.1:8080/healthz", "todo-api": "http://127.0.0.1:9/health" };
+  for (const p of projects) {
+    const url = demoSites[p.slug];
+    if (!url || p.site_url) continue;
+    db.updateProject(p.id, org, { site_url: url });
+    const down = p.slug === "todo-api";
+    for (let i = 60; i >= 1; i--) {
+      const bad = down ? i > 6 || i % 3 === 0 : i % 23 === 0;
+      db.saveHealth(p.id, bad ? { ok: false, status: down ? null : 503, ms: down ? 3 : 120, error: down ? "connexion refusée" : "réponse HTTP 503" } : { ok: true, status: 200, ms: 20 + (i * 7) % 60, error: null }, Date.now() - i * 60_000);
+    }
+  }
+}
+
 const prompts = [
   "Ajoute un tarif dégressif sur l'onglet Voyage", "Corrige l'arrondi de la TVA dans le devis", "Renomme le bouton « Envoyer » en « Valider »",
   "Ajoute une colonne « Fournisseur » au tableau", "Change la couleur d'accent du site", "Ajoute une page Contact avec un formulaire",

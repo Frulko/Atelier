@@ -26,6 +26,7 @@ services:
       SANDBOX_NETWORK: ${ATELIER_SANDBOX_NET:-atelier-sandbox}
       ATELIER_WORKDIR: ${ATELIER_WORKDIR:-/srv/atelier/work}
       ATELIER_FAKE_AGENT: ${ATELIER_FAKE_AGENT:-}
+      ATELIER_HEALTH_ALLOW_PRIVATE: ${ATELIER_HEALTH_ALLOW_PRIVATE:-}  # 1 : la surveillance peut viser le réseau privé (jamais les métadonnées cloud)
       MAX_BUDGET_USD: ${MAX_BUDGET_USD:-2}
     volumes:
       # ⚠ Le socket Docker = droits root sur l'hôte. Voir README, "Sécurité".

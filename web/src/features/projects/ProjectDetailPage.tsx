@@ -100,6 +100,8 @@ export function ProjectDetailPage() {
           <Card className="p-5">
             <dl className="grid gap-5 text-sm">
               {([
+                ["Site", p.siteUrl ? <a href={p.siteUrl} target="_blank" rel="noopener noreferrer" className="break-all font-mono text-[13px] text-accent hover:underline">{p.siteUrl}</a> : <span className="text-muted">Non renseigné</span>],
+                ["Adresse de santé", p.healthUrl ? <span className="break-all font-mono text-[13px]">{p.healthUrl}</span> : <span className="text-muted">{p.siteUrl ? "Celle du site" : "Aucune : pas de surveillance"}</span>],
                 ["Branche de base", <span className="font-mono">{p.branch}</span>],
                 ["Vérification", <code className="rounded bg-line/70 px-1.5 py-0.5 font-mono text-[13px]">{p.check}</code>],
                 ["Moteur d'agent", p.engine],

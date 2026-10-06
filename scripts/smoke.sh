@@ -15,6 +15,7 @@ ATELIER_PORT=18080
 ATELIER_CONTAINER=atelier-smoke-orchestrator
 ATELIER_SANDBOX_NET=atelier-smoke-net
 ATELIER_ALLOW_LOCAL_REPOS=1
+ATELIER_HEALTH_ALLOW_PRIVATE=1
 FIXTURES_DIR=$S/fixtures
 PROJECTS_JSON='$(tr -d '\n' < fixtures/projects.json)'
 ENV
@@ -83,7 +84,7 @@ grep -q check_failed <<<"$EV" || fail "aucun échec de vérification enregistré
 show todo-api "$ID" NOTES.md | grep -q "casse le projet" || fail "le changement valide a disparu après la correction"
 
 # 4. Nettoyage : plus aucun dossier de travail, plus aucun conteneur d'agent
-[ -z "$(ls -A "$S/work")" ] || fail "dossier de travail non nettoyé"
+[ -z "$(ls -A "$S/work" | grep -v '^_status$')" ] || fail "dossier de travail non nettoyé"
 [ -z "$(docker ps -aq --filter label=atelier)" ] || fail "conteneur d'agent resté"
 # 4b. Invitation : un nouveau compte rejoint l'organisation avec le rôle prévu, le lien ne sert qu'une fois
 IB='{"email":"neuf@smoke.test","role":"member"}'

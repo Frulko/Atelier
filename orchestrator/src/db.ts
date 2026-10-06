@@ -119,6 +119,23 @@ if (!taskCols.includes("followup")) db.exec("alter table tasks add column follow
 const eventCols = (db.prepare("pragma table_info(events)").all() as { name: string }[]).map((c) => c.name);
 if (!eventCols.includes("turn")) db.exec("alter table events add column turn integer not null default 1");
 db.exec("create index if not exists tasks_org on tasks(org_id, created_at)");
+const projectCols = (db.prepare("pragma table_info(projects)").all() as { name: string }[]).map((c) => c.name);
+if (!projectCols.includes("site_url")) db.exec("alter table projects add column site_url text");
+if (!projectCols.includes("health_url")) db.exec("alter table projects add column health_url text");
+db.exec(`
+  -- Dernier état connu de chaque projet (santé, dernier commit, déploiement) et historique de santé (7 jours).
+  create table if not exists project_status (
+    project_id text primary key references projects(id) on delete cascade,
+    health_checked_at integer, health_ok integer, health_status integer, health_ms integer, health_error text,
+    git_checked_at integer, commit_sha text, commit_subject text, commit_author text, commit_at integer, git_error text,
+    deploy_json text
+  );
+  create table if not exists health_checks (
+    project_id text not null references projects(id) on delete cascade,
+    ts integer not null, ok integer not null, status integer, ms integer
+  );
+  create index if not exists health_checks_project on health_checks(project_id, ts);
+`);
 const secretCols = (db.prepare("pragma table_info(secrets)").all() as { name: string }[]).map((c) => c.name);
 if (!secretCols.includes("last_used_at")) db.exec("alter table secrets add column last_used_at integer");
 const userCols = (db.prepare("pragma table_info(users)").all() as { name: string }[]).map((c) => c.name);
@@ -337,12 +354,14 @@ export const deleteSecret = (id: string, orgId: string) =>
 export type ProjectRow = {
   id: string; org_id: string; slug: string; name: string; repo: string; branch: string; forge: "gitlab" | "github" | "none";
   check_cmd: string; engine: string; protected_paths: string; git_secret_id: string | null; created_at: number;
+  /** Adresse publique du site et adresse testée pour la santé (par défaut la même). */
+  site_url?: string | null; health_url?: string | null;
 };
 
 export function insertProject(p: Omit<ProjectRow, "id" | "created_at">): string {
   const id = rid();
-  db.prepare("insert into projects (id, org_id, slug, name, repo, branch, forge, check_cmd, engine, protected_paths, git_secret_id, created_at) values (?,?,?,?,?,?,?,?,?,?,?,?)")
-    .run(id, p.org_id, p.slug, p.name, p.repo, p.branch, p.forge, p.check_cmd, p.engine, p.protected_paths, p.git_secret_id, Date.now());
+  db.prepare("insert into projects (id, org_id, slug, name, repo, branch, forge, check_cmd, engine, protected_paths, git_secret_id, created_at, site_url, health_url) values (?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+    .run(id, p.org_id, p.slug, p.name, p.repo, p.branch, p.forge, p.check_cmd, p.engine, p.protected_paths, p.git_secret_id, Date.now(), p.site_url ?? null, p.health_url ?? null);
   return id;
 }
 
@@ -674,3 +693,39 @@ export function chatTokens(orgId: string, from: number, to: number) {
   }
   return { input, output, replies };
 }
+
+/* ------------------------- état des projets : santé, dernier commit, déploiement ------------------------- */
+
+export type HealthResult = { ok: boolean; status: number | null; ms: number | null; error: string | null };
+export type CommitInfo = { sha: string; subject: string; author: string; at: number };
+export type DeployInfo = { environment: string; status: string; ref: string | null; sha: string | null; at: number; url: string | null };
+const WEEK = 7 * 24 * 3600_000;
+
+export function saveHealth(projectId: string, r: HealthResult, ts = Date.now()) {
+  db.prepare("insert into project_status (project_id, health_checked_at, health_ok, health_status, health_ms, health_error) values (?,?,?,?,?,?) on conflict(project_id) do update set health_checked_at = excluded.health_checked_at, health_ok = excluded.health_ok, health_status = excluded.health_status, health_ms = excluded.health_ms, health_error = excluded.health_error")
+    .run(projectId, ts, r.ok ? 1 : 0, r.status, r.ms, r.error);
+  db.prepare("insert into health_checks (project_id, ts, ok, status, ms) values (?,?,?,?,?)").run(projectId, ts, r.ok ? 1 : 0, r.status, r.ms);
+  db.prepare("delete from health_checks where project_id = ? and ts < ?").run(projectId, ts - WEEK);
+}
+
+export function saveGit(projectId: string, g: { commit?: CommitInfo | null; error?: string | null; deploy?: DeployInfo | null }, ts = Date.now()) {
+  db.prepare("insert into project_status (project_id, git_checked_at) values (?,?) on conflict(project_id) do nothing").run(projectId, ts);
+  db.prepare("update project_status set git_checked_at = ?, commit_sha = ?, commit_subject = ?, commit_author = ?, commit_at = ?, git_error = ?, deploy_json = ? where project_id = ?")
+    .run(ts, g.commit?.sha ?? null, g.commit?.subject ?? null, g.commit?.author ?? null, g.commit?.at ?? null, g.error ?? null, g.deploy ? JSON.stringify(g.deploy) : null, projectId);
+}
+
+type StatusRow = ProjectRow & {
+  health_checked_at: number | null; health_ok: number | null; health_status: number | null; health_ms: number | null; health_error: string | null;
+  git_checked_at: number | null; commit_sha: string | null; commit_subject: string | null; commit_author: string | null; commit_at: number | null; git_error: string | null; deploy_json: string | null;
+};
+/** Tout ce que montre le tableau de bord, pour les projets de CETTE organisation : état, uptime 24 h, 30 derniers contrôles, dernière tâche. */
+export function projectStatuses(orgId: string, now = Date.now()) {
+  const rows = db.prepare("select p.*, s.* from projects p left join project_status s on s.project_id = p.id where p.org_id = ? order by p.name").all(orgId) as unknown as (StatusRow & { project_id: string | null })[];
+  return rows.map((r) => {
+    const day = db.prepare("select count(*) as n, coalesce(sum(ok),0) as up from health_checks where project_id = ? and ts >= ?").get(r.id, now - 24 * 3600_000) as { n: number; up: number };
+    const history = (db.prepare("select ts, ok, ms from health_checks where project_id = ? order by ts desc limit 30").all(r.id) as { ts: number; ok: number; ms: number | null }[]).reverse();
+    const last = db.prepare("select id, status, mr_url, created_at, finished_at from tasks where project = ? and org_id = ? order by created_at desc, rowid desc limit 1").get(r.id, orgId) as { id: string; status: string; mr_url: string | null; created_at: number; finished_at: number | null } | undefined;
+    return { row: r as StatusRow, uptime24h: day.n ? day.up / day.n : null, checks24h: day.n, history, lastTask: last ?? null };
+  });
+}
+export const projectsToMonitor = () => db.prepare("select p.*, s.health_checked_at, s.git_checked_at from projects p left join project_status s on s.project_id = p.id").all() as unknown as (ProjectRow & { health_checked_at: number | null; git_checked_at: number | null })[];

@@ -116,3 +116,50 @@ export async function verifyAccess(p: Project): Promise<AccessCheck> {
     return { ok: false, branchFound: false, error, detail: text.trim(), ms: Date.now() - t0 };
   }
 }
+
+export type LatestCommit = { sha: string; subject: string; author: string; at: number };
+
+/**
+ * Dernier commit de la branche de base, SANS cloner tout le dépôt : un dépôt nu de travail (hors du dossier des tâches) où l'on
+ * ne récupère que le sommet de la branche (profondeur 1). Les hooks sont neutralisés comme partout, le jeton passe par l'environnement.
+ */
+export async function latestCommit(p: Project, id: string): Promise<LatestCommit> {
+  const dir = join(cfg.workDir, "_status", `${id}.git`);
+  await mkdir(dir, { recursive: true });
+  const env = gitEnv(p.token, p.forge);
+  const g = (args: string[]) => run("git", ["--git-dir", dir, ...args], { env, timeout: 30_000, maxBuffer: 1e6 }).then((r) => r.stdout.trim());
+  try {
+    await g(["rev-parse", "--git-dir"]).catch(() => g(["init", "--bare", "--quiet"]));
+    await g(["fetch", "--quiet", "--depth", "1", "--no-tags", "--", p.repo, `+refs/heads/${p.branch}:refs/heads/base`]);
+    const out = await g(["log", "-1", "--format=%H%x1f%s%x1f%an%x1f%ct", "refs/heads/base"]);
+    const [sha = "", subject = "", author = "", ct = "0"] = out.split("\x1f");
+    return { sha, subject: subject.slice(0, 200), author: author.slice(0, 100), at: Number(ct) * 1000 };
+  } catch (e: any) {
+    throw new Error(scrub(String(e.stderr || e.message || "dépôt injoignable"), [p.token]).split("\n").filter(Boolean).slice(-1)[0]!.slice(0, 200));
+  }
+}
+
+export type LatestDeploy = { environment: string; status: string; ref: string | null; sha: string | null; at: number; url: string | null };
+
+/** Dernier déploiement connu de la forge (GitLab : Deployments ; GitHub : Deployments + statut). Facultatif : rien si la forge n'en remonte pas. */
+export async function latestDeployment(p: Project): Promise<LatestDeploy | null> {
+  if (p.forge === "none" || !p.token) return null;
+  const u = new URL(p.repo);
+  const path = u.pathname.replace(/^\/|\.git$/g, "");
+  const get = async (url: string, headers: Record<string, string>) => {
+    const r = await fetch(url, { headers: { "user-agent": "atelier", ...headers }, signal: AbortSignal.timeout(10_000) });
+    if (!r.ok) throw new Error(`${p.forge === "github" ? "GitHub" : "GitLab"} ${r.status}`);
+    return r.json() as Promise<any>;
+  };
+  if (p.forge === "github") {
+    const api = u.hostname === "github.com" ? "https://api.github.com" : `${u.origin}/api/v3`;
+    const h = { authorization: `Bearer ${p.token}`, accept: "application/vnd.github+json" };
+    const [d] = await get(`${api}/repos/${path}/deployments?per_page=1`, h);
+    if (!d) return null;
+    const [st] = await get(`${api}/repos/${path}/deployments/${d.id}/statuses?per_page=1`, h);
+    return { environment: String(d.environment ?? ""), status: String(st?.state ?? "pending"), ref: d.ref ?? null, sha: d.sha ?? null, at: Date.parse(st?.created_at ?? d.created_at), url: st?.environment_url ?? st?.target_url ?? null };
+  }
+  const [d] = await get(`${u.origin}/api/v4/projects/${encodeURIComponent(path)}/deployments?per_page=1&order_by=created_at&sort=desc`, { "PRIVATE-TOKEN": p.token });
+  if (!d) return null;
+  return { environment: String(d.environment?.name ?? ""), status: String(d.status ?? ""), ref: d.ref ?? null, sha: d.sha ?? null, at: Date.parse(d.finished_at ?? d.created_at), url: d.environment?.external_url ?? null };
+}

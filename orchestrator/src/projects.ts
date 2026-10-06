@@ -1,5 +1,6 @@
 import { cfg, inferForge, type Project } from "./config.ts";
 import type { ProjectRow } from "./db.ts";
+import { urlProblem } from "./health.ts";
 import { readSecret } from "./vault.ts";
 
 export const ENGINES = ["claude"];
@@ -8,6 +9,7 @@ const FORGES = ["gitlab", "github", "none"];
 export type ProjectFields = {
   slug: string; name: string; repo: string; branch: string; forge: "gitlab" | "github" | "none";
   check: string; engine: string; protectedPaths: string[]; gitSecretId: string | null;
+  siteUrl: string | null; healthUrl: string | null;
 };
 type Result = { ok: true; value: Partial<ProjectFields> } | { ok: false; error: string };
 
@@ -57,6 +59,13 @@ export function validateProject(input: any, partial: boolean): Result {
     if (input.gitSecretId !== null && !str(input.gitSecretId, 40)) return { ok: false, error: "secret invalide" };
     v.gitSecretId = input.gitSecretId;
   } else if (!partial) v.gitSecretId = null;
+  for (const [k, field] of [["siteUrl", "adresse du site"], ["healthUrl", "adresse de santé"]] as const) {
+    if (input[k] === undefined) { if (!partial) v[k] = null; continue; }
+    if (input[k] === null || input[k] === "") { v[k] = null; continue; }
+    const problem = urlProblem(input[k]);
+    if (problem) return { ok: false, error: `${field} : ${problem}` };
+    v[k] = input[k];
+  }
   if (!partial && !v.forge) v.forge = inferForge(v.repo!);
   return { ok: true, value: v };
 }
@@ -76,6 +85,7 @@ function repoProblem(repo: unknown): string | null {
 export const rowToJson = (r: ProjectRow) => ({
   id: r.id, slug: r.slug, name: r.name, repo: r.repo, branch: r.branch, forge: r.forge, check: r.check_cmd,
   engine: r.engine, protectedPaths: JSON.parse(r.protected_paths) as string[], gitSecretId: r.git_secret_id,
+  siteUrl: r.site_url ?? null, healthUrl: r.health_url ?? null,
 });
 
 /** Projet prêt à l'emploi pour le pipeline : le token git est déchiffré ICI, à l'instant de l'usage. */

@@ -17,6 +17,7 @@ Atelier is configured through environment variables (see [`.env.example`](../.en
 | `ATELIER_BOOTSTRAP_EMAIL` | `admin@localhost` | E-mail of the owner created on first start |
 | `ATELIER_MASTER_KEY` | generated in the data volume | Base64 of 32 bytes (`openssl rand -base64 32`). Encrypts all secrets — **back it up separately from the database** |
 | `ATELIER_GIT_HOSTS` | empty (any `https` host) | Comma-separated allowlist of git hosts for projects created through the API |
+| `ATELIER_HEALTH_ALLOW_PRIVATE` | off | `1` lets the health monitor reach private and local addresses (internal sites, demo). Link-local addresses (cloud metadata) are **always** refused |
 | `ATELIER_ALLOW_LOCAL_REPOS` | off | `1` accepts local-path repositories. **Tests and demo only** |
 | `TRUST_PROXY` | off | `1` behind an HTTPS reverse proxy: reads the real IP and scheme from `X-Forwarded-*` |
 | `COOKIE_SECURE` | off | `1` forces the `Secure` attribute on the session cookie |
