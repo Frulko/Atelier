@@ -98,6 +98,7 @@ with sync_playwright() as p:
     admin.get_by_label("Demander un ajustement").press("Enter")                          # a follow-up = a new agent turn, same branch
     expect(admin.get_by_text("Ajustement 1")).to_be_visible()
     expect(admin.get_by_text(re.compile("mise à jour")).first).to_be_visible(timeout=90000)
+    expect(admin.get_by_role("link", name="Ouvrir dans l'éditeur")).to_be_visible()      # a finished task can be polished by hand
     shot(admin, "03b-task-conversation")
     admin.goto(first_task)
     admin.get_by_role("button", name="Relancer").click()                                 # retry = a NEW task
@@ -118,21 +119,47 @@ with sync_playwright() as p:
     expect(admin.get_by_role("heading", name="Todo API (Node)")).to_be_visible()
     shot(admin, "05-projects")
     admin.get_by_role("link").filter(has_text="Todo API (Node)").click()
-    expect(admin.get_by_role("tab", name=re.compile("^Tâches"))).to_be_visible()   # the project's sub-menu
-    for tabname in ["Conversations", "Connaissances"]:
-        admin.get_by_role("tab", name=re.compile(f"^{tabname}")).click()
-        expect(admin.get_by_role("tab", name=re.compile(f"^{tabname}"))).to_have_attribute("aria-selected", "true")
-    admin.get_by_role("tab", name=re.compile("^Tâches")).click()
-    expect(admin).to_have_url(re.compile(r"tab=taches"))                       # the tab lives in the URL
-    admin.get_by_role("button", name="Nouveau", exact=True).click()             # one button, two modes: task or discussion
+    side = admin.get_by_role("navigation", name="Menu du projet")                 # the project's own side menu
+    crumbs = admin.get_by_role("navigation", name="Fil d'Ariane")                  # and the breadcrumb in the top bar
+    expect(crumbs).to_contain_text("Projets"); expect(crumbs).to_contain_text("Todo API (Node)")
+    for label, url in [("Tâches", "/tasks"), ("Conversations", "/conversations"), ("Connaissances", "/knowledge")]:
+        side.get_by_role("link", name=re.compile(f"^{label}")).click()
+        expect(admin).to_have_url(re.compile(f"projects/[0-9a-f]+{url}$"))
+        expect(side).to_be_visible()                                                # the menu stays where we go
+        expect(crumbs).to_contain_text(label)
+    admin.get_by_role("button", name="Nouveau", exact=True).first.click()           # one button, two modes: task or discussion
     dlg = admin.get_by_role("dialog")
     expect(dlg.get_by_role("radio", name="Discuter")).to_be_visible()
     expect(dlg.get_by_role("radio", name="Tâche")).to_be_visible()
     expect(dlg.get_by_label("Projet")).to_have_value(re.compile(".+"))          # the project is already chosen
     dlg.get_by_role("button", name="Annuler").click()
-    admin.get_by_role("tab", name="Configuration").click()
+    side.get_by_role("link", name="Configuration").click()
     admin.get_by_role("button", name="Vérifier l'accès").click()
     expect(admin.get_by_text("Tout répond")).to_be_visible()                    # git ls-remote worked
+    # ------------------------------------------------------------ the embedded editor (Monaco)
+    side.get_by_role("link", name="Éditeur").click()
+    tree = admin.get_by_role("list", name="Arbre des fichiers")
+    expect(tree.get_by_text("server.js")).to_be_visible(timeout=60000)               # a private workspace was cloned
+    expect(admin.get_by_text(re.compile("Tu édites une copie privée"))).to_be_visible()
+    tree.get_by_text("server.js").click()
+    expect(admin.get_by_role("tab", name=re.compile("server.js"))).to_be_visible()
+    admin.locator(".monaco-editor").first.click()
+    admin.keyboard.press("ControlOrMeta+End")
+    admin.keyboard.type(f"\n// édité à la main {RUN}\n")
+    expect(admin.get_by_text("Brouillon enregistré")).to_be_visible()                # autosaved draft
+    expect(admin.get_by_role("list", name="Fichiers modifiés").get_by_text("server.js")).to_be_visible()
+    expect(admin.get_by_label("Différences")).to_contain_text(f"édité à la main {RUN}")
+    shot(admin, "05f-editor")
+    admin.get_by_role("tab", name="Vérification").click()
+    admin.get_by_role("button", name="Lancer la vérification").click()
+    expect(admin.get_by_text("La vérification passe.")).to_be_visible(timeout=90000)   # the project check, in the sandbox
+    admin.get_by_label("Valider les modifications").fill(f"Commentaire ajouté depuis l'éditeur {RUN}")
+    admin.get_by_role("button", name="Valider et envoyer").click()
+    expect(admin.get_by_test_id("commit-result")).to_contain_text("1 fichier envoyé", timeout=30000)
+    admin.get_by_role("button", name=re.compile("Abandonner|Confirmer")).click()
+    admin.get_by_role("button", name=re.compile("Abandonner|Confirmer")).click()      # two-click confirmation
+    expect(admin.get_by_role("heading", level=1, name="Todo API (Node)")).to_be_visible()
+    side.get_by_role("link", name="Configuration").click()
     admin.get_by_role("button", name="Modifier").click()                         # give the project a site address to watch
     dlg = admin.get_by_role("dialog")
     dlg.get_by_label("Adresse du site").fill("http://127.0.0.1:8080/healthz")   # seen from INSIDE the container
@@ -152,7 +179,7 @@ with sync_playwright() as p:
     dlg.get_by_label("Dépôt git").fill("/fixtures/boulangerie.git")
     dlg.get_by_role("button", name="Créer le projet").click()
     expect(admin.get_by_role("heading", level=1, name=f"Projet UI {RUN}")).to_be_visible()
-    admin.get_by_role("tab", name="Configuration").click()
+    admin.get_by_role("navigation", name="Menu du projet").get_by_role("link", name="Configuration").click()
     delete = admin.get_by_role("button", name=re.compile("Supprimer|Confirmer"))   # its label changes once armed
     delete.click()
     delete.click()                                                                        # two-click confirmation

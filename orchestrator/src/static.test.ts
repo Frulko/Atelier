@@ -11,7 +11,7 @@ import type { AddressInfo } from "node:net";
 const root = mkdtempSync(join(tmpdir(), "atelier-static-"));
 const pub = join(root, "public");
 mkdirSync(join(pub, "assets"), { recursive: true });
-writeFileSync(join(pub, "index.html"), "<!doctype html><title>Atelier</title><div id=root></div>");
+writeFileSync(join(pub, "index.html"), "<!doctype html><head><title>Atelier</title></head><div id=root></div>");
 writeFileSync(join(pub, "assets", "app.abc123.js"), "console.log('app')");
 writeFileSync(join(pub, "assets", "style.def456.css"), "body{margin:0}");
 writeFileSync(join(pub, "favicon.svg"), "<svg xmlns='http://www.w3.org/2000/svg'/>");
@@ -106,6 +106,19 @@ test("en-têtes de sécurité sur chaque réponse, y compris l'API et les erreur
     assert.equal(h["referrer-policy"], "no-referrer", p);
   }
   assert.ok(!String((await raw("/")).headers["content-security-policy"]).replace("'wasm-unsafe-eval'", "").includes("unsafe-eval"));
+});
+
+test("la page d'entrée porte un jeton à usage unique pour les <style> de l'éditeur ; jamais 'unsafe-inline' sur les styles", async () => {
+  const a = await raw("/"), b = await raw("/o/0000000000000000/projects/x/editor");
+  const nonce = (r: typeof a) => /'nonce-([A-Za-z0-9+/=]{22,})'/.exec(String(r.headers["content-security-policy"]))?.[1];
+  assert.ok(nonce(a) && nonce(b));
+  assert.notEqual(nonce(a), nonce(b));                                                                  // un jeton par réponse
+  for (const r of [a, b]) {
+    assert.ok(r.body.includes(`<meta name="csp-nonce" content="${nonce(r)}"`), "le jeton est dans la page, pour que l'application le lise");
+    assert.match(String(r.headers["content-security-policy"]), /style-src 'self' 'nonce-[^']+';/);
+    assert.doesNotMatch(String(r.headers["content-security-policy"]).split("; ").find((d) => d.startsWith("style-src "))!, /unsafe-inline/);
+  }
+  for (const p of ["/api/me", "/assets/app.abc123.js", "/healthz"]) assert.equal(nonce(await raw(p)), undefined, p);   // ni jeton ni en-tête étendu ailleurs
 });
 
 test("les réponses d'API ne sont jamais mises en cache ; HSTS seulement en HTTPS", async () => {

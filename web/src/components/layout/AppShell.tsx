@@ -8,6 +8,7 @@ import { meQuery } from "../../lib/queries";
 import { useOrg } from "../../lib/useOrg";
 import { Avatar } from "../ui/Avatar";
 import { Logo } from "./Logo";
+import { Breadcrumbs } from "./Breadcrumbs";
 import { OrgSwitcher } from "./OrgSwitcher";
 import { TourProvider } from "../../features/guide/Tour";
 
@@ -78,10 +79,6 @@ export function AppShell() {
     <div className="min-h-screen lg:grid lg:grid-cols-[16.5rem_1fr]">
       <aside className="sticky top-0 hidden h-screen border-r border-side-line bg-side lg:block" aria-label="Barre latérale"><SidebarBody /></aside>
 
-      <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-side-line bg-side px-4 py-3 lg:hidden">
-        <button type="button" onClick={() => setMenu(true)} aria-label="Ouvrir le menu" className="rounded-md p-1.5 text-side-ink hover:bg-side-hover"><Menu className="size-5" /></button>
-        <Logo className="size-7" /><span className="font-display text-lg text-side-ink">Atelier</span>
-      </header>
       <div className={clsx("fixed inset-0 z-40 lg:hidden", menu ? "" : "pointer-events-none")} aria-hidden={!menu}>
         <div className={clsx("absolute inset-0 bg-black/50 transition-opacity", menu ? "opacity-100" : "opacity-0")} onClick={() => setMenu(false)} />
         <aside className={clsx("absolute inset-y-0 left-0 w-[18rem] border-r border-side-line bg-side transition-transform", menu ? "translate-x-0" : "-translate-x-full")}>
@@ -90,7 +87,14 @@ export function AppShell() {
         </aside>
       </div>
 
-      <main className="min-w-0 px-5 py-8 sm:px-8 lg:px-12 lg:py-10"><div className="mx-auto max-w-[72rem]"><Outlet /></div></main>
+      <div className="min-w-0">
+        <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-line bg-paper/90 px-4 backdrop-blur sm:px-8 lg:px-12">
+          <button type="button" onClick={() => setMenu(true)} aria-label="Ouvrir le menu" className="rounded-md p-1.5 text-ink hover:bg-line/60 lg:hidden"><Menu className="size-5" /></button>
+          <Logo className="size-7 lg:hidden" />
+          <Breadcrumbs />
+        </header>
+        <main className="min-w-0 px-5 py-8 sm:px-8 lg:px-12 lg:py-10"><div className="mx-auto max-w-[72rem]"><Outlet /></div></main>
+      </div>
     </div>
     </TourProvider>
   );

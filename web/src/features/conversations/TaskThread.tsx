@@ -49,6 +49,9 @@ export function TaskThread({ detail }: { detail: ConversationDetail }) {
           {t.branch && <span className="flex items-center gap-1.5 font-mono text-[13px]"><GitBranch className="size-3.5 text-muted" aria-hidden />{t.branch}</span>}
           {t.mr_url && <a href={t.mr_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 font-medium text-accent hover:underline">Demande de fusion <ExternalLink className="size-3.5" aria-hidden /></a>}
           <span className="text-muted">Coût déclaré : <span className="tnum text-ink">{t.cost ? fmtUsd(t.cost) : "—"}</span></span>
+          {t.status === "done" && canFollowUp && c.projectId && (
+            <Link to="/o/$orgId/projects/$projectId/editor" params={{ orgId, projectId: c.projectId }} search={{ task: taskId }} className="text-[13px] font-medium text-accent hover:underline">Ouvrir dans l'éditeur</Link>
+          )}
           <Link to="/o/$orgId/tasks/$taskId" params={{ orgId, taskId }} className="ml-auto text-[13px] font-medium text-muted hover:text-ink">Détail de la tâche</Link>
         </Card>
       )}

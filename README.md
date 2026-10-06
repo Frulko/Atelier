@@ -34,7 +34,8 @@ A teammate writes *"add a volume discount to the Travel tab"*. An AI agent edits
 
 - **Discuss** with an assistant that has read your team's *knowledge* (tone, rules, vocabulary) and tells you which items it used. Nothing is modified; discussions are private to their author. Attach images, PDFs or text files.
 - **Run a task**: the agent changes the code in a sandbox. A task is also a conversation — ask for adjustments and it updates the same branch and merge request.
-- **See where each project stands**: site health, last commit, deployment, latest task.
+- **See where each project stands**: site health, last commit, deployment, latest task — in a project space with its own menu and breadcrumb.
+- **Edit by hand when you prefer**: an in-browser editor (Monaco) on a private copy; it commits to a branch under the same review rules, and can polish an agent's proposal.
 - **Be taken by the hand**: a welcome tour, a guide and a guided first use case (a bakery that wants a contact page).
 
 ## Quick start
@@ -63,7 +64,8 @@ To run it for real (your own projects, a real model, a real forge), see **[Deplo
 | Organizations, members, invitations, projects, secrets, budget, audit log, sessions | ✅ working, API and UI |
 | Conversations: a streaming assistant (Vercel AI SDK, per-organization provider and model, set in the UI) with file attachments, a knowledge base, tasks as conversations with follow-up turns on the same branch | ✅ working, tested with a fake model (no real provider call yet) |
 | Dashboard health and git status, welcome tour, guide and guided first steps | ✅ working, driven in a real browser (forge deployments not exercised against a real forge) |
-| Embedded code editor (Monaco), SSO (OIDC, GitLab / GitHub sign-in), real-agent validation, previews | 🚧 next ([editor design](docs/editor-design.md), [roadmap](docs/roadmap.md)) |
+| Embedded code editor (Monaco): private workspaces, autosaved drafts, diff, sandboxed check, commit and push, edit an agent's branch | ✅ working, driven in a real browser ([design](docs/editor-design.md)) |
+| SSO (OIDC, GitLab / GitHub sign-in), real-agent validation, previews | 🚧 next ([roadmap](docs/roadmap.md)) |
 
 Read **[Security → known limitations](docs/security.md#known-limitations)** before exposing it to anyone.
 

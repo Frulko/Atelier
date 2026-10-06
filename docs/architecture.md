@@ -10,6 +10,7 @@ Atelier is one small service, the **orchestrator**, plus a **sandbox image** tha
 |---|---|---|
 | **Orchestrator** | `orchestrator/` — Node 24, TypeScript run directly (no build step), SQLite. One bounded dependency family: the Vercel AI SDK and its provider packages | HTTP API, accounts and sessions, organizations and roles, task queue, git operations, sandbox lifecycle, the discussion assistant, the project monitor |
 | **Assistant** | `orchestrator/src/chat.ts`, `knowledge.ts`, `attachments.ts` | Discuss mode: streams a model's answer (AI SDK) from the organization's provider and key, injects the selected *knowledge*, records which items were used, checks attachments. Never reads the repository and cannot change code |
+| **Editor** | `orchestrator/src/editor.ts` | Private editing workspaces on the server: a clone with the git directory outside the tree, a path-safe file API, diff, the sandboxed check, and commit-as-the-person with a push that never forces |
 | **Monitor** | `orchestrator/src/monitor.ts`, `health.ts` | Background checks per project: site health every minute (with an SSRF guard) and the last commit of the base branch every five minutes |
 | **Vault** | `orchestrator/src/vault.ts` | Encrypts git tokens and model API keys at rest (AES-256-GCM) |
 | **Model proxy** | `orchestrator/src/proxy.ts` | The only route out of the sandbox. Identifies the organization from a one-time task token, enforces its budget, allows generation endpoints only and injects that organization's API key |
@@ -54,6 +55,7 @@ atelier/
 │   ├── src/attachments.ts          validation of attached files (size, count, magic bytes)
 │   ├── src/knowledge.ts            knowledge validation and selection under a character budget
 │   ├── src/start.ts                starts a task with its conversation; follow-up turns
+│   ├── src/editor.ts               editing sessions, safe file API, diff, check, commit
 │   ├── src/health.ts, monitor.ts   site health with an SSRF guard; background project status
 │   ├── src/access.ts               role → permission table
 │   ├── src/auth.ts                 password hashing (scrypt)

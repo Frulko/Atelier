@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import type http from "node:http";
 import { existsSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -22,6 +23,9 @@ export const CSP = [
   "default-src 'self'", "script-src 'self' 'wasm-unsafe-eval'", "style-src 'self'", "style-src-attr 'unsafe-inline'", "img-src 'self' data: blob:", "font-src 'self'",
   "connect-src 'self' blob:", "frame-ancestors 'none'", "base-uri 'none'", "form-action 'self'", "object-src 'none'",
 ].join("; ");
+
+/** La page d'entrée reçoit un jeton à usage unique pour les balises <style> que l'éditeur de code crée lui-même (Monaco) : pas de 'unsafe-inline'. */
+const withStyleNonce = (nonce: string) => CSP.replace("style-src 'self'", `style-src 'self' 'nonce-${nonce}'`);
 
 export function securityHeaders(res: http.ServerResponse, secure: boolean) {
   res.setHeader("Content-Security-Policy", CSP);
@@ -52,8 +56,13 @@ export async function serveStatic(req: http.IncomingMessage, res: http.ServerRes
     target = resolve(PUBLIC_DIR, "index.html");
     if (!isFile(target)) { res.writeHead(503, { "content-type": "text/plain; charset=utf-8" }).end("Interface non construite : lancez « npm run build » dans web/."); return true; }
   }
-  const body = await readFile(target);
+  let body = await readFile(target);
   const isIndex = target.endsWith(`${sep}index.html`);
+  if (isIndex) {
+    const nonce = randomBytes(16).toString("base64");
+    body = Buffer.from(body.toString("utf8").replace("</head>", `    <meta name="csp-nonce" content="${nonce}" />\n  </head>`));
+    res.setHeader("Content-Security-Policy", withStyleNonce(nonce));
+  }
   res.writeHead(200, {
     "content-type": MIME[extname(target)] ?? "application/octet-stream",
     "content-length": body.length,

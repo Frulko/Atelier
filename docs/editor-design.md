@@ -1,6 +1,6 @@
 # Embedded code editor
 
-**Status:** phases 1 and 2 (workspaces, files, diff, check, commit, merge request — API only) have shipped; the interface and the integration with tasks are still to build.
+**Status:** shipped. The interface lives under a project (`/o/:org/projects/:id/editor`) and a finished task opens in it ("Open in the editor"). Not built: quick open (`Cmd+P`), project-wide search, a terminal and completions beyond Monaco's built-ins.
 
 Atelier lets people change software by talking to an agent. Some people — and some changes — want the opposite: open a file, fix a sentence or a colour by hand, and propose it for review without installing anything. This page designs an **editor in the browser** (a small VS Code) that edits a project's code and commits it, under the same review rules as the agent.
 
@@ -18,7 +18,7 @@ The rule that does not change: **a human or an agent proposes, a human reviews a
 
 | Topic | Choice | Why |
 |---|---|---|
-| Editor component | **Monaco**, bundled with the app (workers included), no CDN | It is the VS Code editor: syntax highlighting, search, multi-cursor, a diff editor. Self-hosted keeps the strict CSP (`worker-src 'self' blob:` is the one addition) and works offline |
+| Editor component | **Monaco**, bundled with the app (workers included), no CDN | It is the VS Code editor: syntax highlighting, search, multi-cursor. Self-hosted keeps the strict CSP and works offline. Monaco creates `<style>` elements itself, so the entry page carries a **per-response nonce** (`style-src 'self' 'nonce-…'`, a `<meta name="csp-nonce">` the editor reads): no `'unsafe-inline'` anywhere. Its workers are same-origin files |
 | Where files live | A **server-side workspace per editing session**: a clone of the project in a directory the browser never sees directly | The git token must stay on the server; the browser edits through an API |
 | Unit of work | A **session** = one branch (`atelier/edit-<id>` from the base branch, or an existing task branch) | Maps to a merge request; easy to discard |
 | Saving | Each save writes to the workspace (a *draft*, nothing leaves the server). **Commit** stages the changes, commits and pushes the branch | People can save often without making noise in git |
@@ -66,8 +66,8 @@ A full-width page `/o/:org/projects/:id/editor`: file tree on the left (with a f
 
 1. ✅ **Workspaces and files**: session lifecycle, path safety, file API, limits, expiry, tests (traversal, symlinks, quotas, isolation between organizations).
 2. ✅ **Commit, check, merge request**: diff, commit and push, the check in the sandbox, merge request creation, audit, tests on a real local repository.
-3. **The editor**: Monaco bundled with workers and the CSP change, tree, tabs, diff panel, commit dialog, keyboard shortcuts, browser test.
-4. **Integration**: edit a task's proposal, "open in editor" from a task and from the dashboard, documentation and screenshots.
+3. ✅ **The editor**: Monaco bundled with workers and the CSP change, tree, tabs, diff panel, commit dialog, keyboard shortcuts, browser test.
+4. ✅ **Integration**: edit a task's proposal ("Open in the editor" on a finished task), the project menu entry. Documentation updated; a screenshot is still to take.
 
 ## Limits to be honest about
 
