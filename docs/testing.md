@@ -27,7 +27,11 @@ Three commands. All three must be green before a commit.
 | Budget: month boundaries, per-organization spend, cap semantics, API roles, task creation refused when over budget | `budget.test.ts` |
 | Organizations, members, invitations: privilege escalation, single-use and expiry, hashed token, address match, last owner, cross-organization isolation | `members.test.ts` |
 | Static serving: files, SPA fallback, **no way out of the public folder** (`../`, encoded, null byte), security headers on every response, no-store API | `static.test.ts` |
-| **The whole web application in a real browser** (Playwright, `scripts/ui_check.py`): sign-in, a task run to "branch pushed" and retried, filters kept in the URL, project creation, access check and deletion, a secret that never reappears in the page, an invitation opened by a second browser that joins as a member and cannot reach admin pages, role change, removal, budget, audit filters and CSV export, organization rename, profile, theme, a phone-sized menu with no horizontal scroll, sign-out | `smoke.sh` (skipped, with a notice, if Playwright is not installed) |
+| **The whole web application in a real browser** (Playwright, `scripts/ui_check.py`): sign-in, a task run to "branch pushed" and retried, filters kept in the URL, project creation, access check and deletion, a secret that never reappears in the page, an invitation opened by a second browser that joins as a member and cannot reach admin pages, role change, removal, budget, audit filters and CSV export, organization rename, profile, theme, a phone-sized menu with no horizontal scroll, sign-out; **a streamed discussion with sources and an attached file, a task turned into a thread with a follow-up that updates the same branch, the dashboard's health and last commit, the welcome tour (keyboard, remembered), the guided first steps with prefilled text** | `smoke.sh` (skipped, with a notice, if Playwright is not installed) |
+| Discuss mode with the **fake model**: stream format, persisted answer with sources and tokens, knowledge selection, server-held history, regenerate, **privacy of discussions even from admins**, limits (empty, long, rate, budget), attachments (type, size, count, magic bytes, fence escaping, no remote URL), organization chat settings | `chat-fake.test.ts` |
+| Knowledge selection and validation: budget, pinning, relevance with accents, project scope, oversized items skipped | `knowledge.test.ts` |
+| Follow-up turns: rules (only done tasks, turn cap, author or admin), failure leaves the proposal intact, budget | `followup.test.ts` (the real extra turn on the same branch is in `smoke.sh`) |
+| Project status: health (ok, 5xx, redirect not followed, timeout, refused), **SSRF guards** (metadata and link-local always refused, private only when allowed, literal IPs), last commit read from a real git repository, uptime and retention, isolation, rate limit | `status.test.ts`, `health-private.test.ts` |
 | Task list filters, pagination bounds, literal text search, timing, retry | `tasks-api.test.ts` |
 | Audit log: what is recorded, who reads it, filters, CSV, **no secret ever in it** | `audit.test.ts` |
 | Dashboard and usage statistics: exact totals, no gaps, windows, roles, isolation | `stats.test.ts` |
@@ -38,6 +42,9 @@ Three commands. All three must be green before a commit.
 | Clone → sandbox → check → **fix loop** → commit → push → cleanup, with several projects | `smoke.sh` |
 
 ## What is *not* covered yet
+
+- A **real model provider** behind the discussion assistant (including image and PDF attachments). Only the fake model, and a fake HTTP provider for the proxy, run in tests.
+- **Deployment information from a real GitLab or GitHub** (the forge calls exist but have never run).
 
 - The **real Claude agent** inside the sandbox (proxy + SDK end to end). Only the fake agent runs in tests.
 - A **real GitLab merge request** and a **real GitHub pull request**. Code exists; it has only run against local git repositories.

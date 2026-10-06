@@ -2,7 +2,7 @@
 
 The first UI was a single static page. Atelier now gets a real application: navigation, dashboards, filtering, detail pages, audit and usage tracking, and settings for the organization and the account.
 
-**Status:** phases 1 to 3 are done and the application is served by the orchestrator; phase 4 (polish) continues. This page records the decisions and the order of work.
+**Status:** phases 1 to 3 are done and the application is served by the orchestrator; phase 4 (polish) continues. Since then: conversations, knowledge, the guide, the dashboard's project status and the welcome tour were added (see [conversations design](conversations-design.md)). This page records the decisions and the order of work.
 
 ## Decisions
 
@@ -11,6 +11,7 @@ The first UI was a single static page. Atelier now gets a real application: navi
 | Framework | **React 19 + TypeScript + Vite**, in `web/` | The orchestrator stays free of runtime dependencies; the app is a separate package built to static files that the orchestrator serves |
 | Routing and data | **TanStack Router** (typed routes, code-based) and **TanStack Query** (server state, cache, polling) | Typed, and Query replaces hand-written fetch and refresh code |
 | Styling | **Tailwind CSS v4** with a small set of local components, shadcn-style tokens | No component-library lock-in; design tokens in one CSS file; light, dark and system themes |
+| Chat | **Vercel AI Elements** (vendored in `components/ai-elements`, on shadcn primitives in `components/shadcn`) and the AI SDK `useChat` hook | Streaming, stop, regenerate, attachments and Markdown streaming are solved problems; vendored means no lock-in |
 | Charts | Small hand-built SVG components | The charts are simple (stacked bars, a cumulative line, a donut, horizontal bars); avoids a heavy charting dependency |
 | Language | French UI, strings kept in one module per area | The users are French-speaking; extracting to a locale file stays cheap |
 | Serving | Orchestrator serves `web/dist` with an SPA fallback, strict **Content-Security-Policy** and cache headers | One container, no CORS; the policy is a security gain over the inline-script page |
@@ -20,7 +21,10 @@ The first UI was a single static page. Atelier now gets a real application: navi
 
 ```
 Sidebar (organization switcher · navigation · account)
-├── Overview            KPIs, activity chart, spend vs budget, live tasks, recent activity
+├── Overview            project health and last commit, first steps, KPIs, activity, spend vs budget, live tasks
+├── Conversations       discuss with the assistant, or run a task as a thread with follow-ups
+├── Knowledge           what the assistant and the agent are told
+├── Guide               how it works, first steps, tour
 ├── Tasks               filterable table, new task, task detail (timeline, files, MR, retry/cancel)
 ├── Projects            cards, project detail (settings, recent tasks, statistics, access check)
 ├── Team                members, roles, invitations, per-member activity

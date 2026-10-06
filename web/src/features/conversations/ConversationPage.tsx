@@ -106,7 +106,7 @@ function ChatWindow({ conversation, initial }: { conversation: Conversation; ini
   }), [orgId, conversation.id]);
   const { messages, sendMessage, status, stop, regenerate, error } = useChat({
     id: conversation.id, messages: initial, transport,
-    onFinish: () => { invalidateOrg(orgId, "conversations"); },
+    onFinish: () => { invalidateOrg(orgId, "conversations"); invalidateOrg(orgId, "conversation", conversation.id); }, // le titre vient d'être créé par le serveur
   });
   const busy = status === "submitted" || status === "streaming";
 

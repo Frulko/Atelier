@@ -61,7 +61,7 @@ POST   /api/me/sessions/revoke-others
 # organization
 POST   /api/orgs                  { name }                       any signed-in user → becomes owner
 GET    /api/orgs/:org                                             admin+  → name, budget, month spend
-PATCH  /api/orgs/:org             { name?, budgetUsdMonth? }      admin+  (budget: a number ≥ 0, or null for no cap)
+PATCH  /api/orgs/:org             { name?, budgetUsdMonth?, chatProvider?, chatModel? }   admin+  (budget: a number ≥ 0, or null; chat: provider and model of the assistant)
 DELETE /api/orgs/:org             { confirm: "<exact name>" }     owner   refused while tasks run; deletes everything it owns
 
 # people
@@ -92,6 +92,21 @@ GET    /api/orgs/:org/tasks/:id/events                            live stream (S
 POST   /api/orgs/:org/tasks/:id/cancel                            own task, or admin+
 POST   /api/orgs/:org/tasks/:id/retry                             member+  a new task with the same request
 
+# conversations, knowledge and project state
+GET    /api/orgs/:org/knowledge                                   viewer+  (list without contents)
+POST   /api/orgs/:org/knowledge   { title, content, projectId?, enabled?, pinned? }   admin+
+PATCH  /api/orgs/:org/knowledge/:id · DELETE …                    admin+
+POST   /api/orgs/:org/knowledge/preview { projectId?, query }     viewer+  what the assistant would be given
+GET    /api/orgs/:org/conversations?mode=&project=&q=             viewer+  own discussions + every task conversation
+POST   /api/orgs/:org/conversations { mode: chat | task, projectId?, text?, parentId? }   member+
+GET    /api/orgs/:org/conversations/:id                           messages (UI-message shape), task; a foreign discussion is 404
+PATCH  /api/orgs/:org/conversations/:id { title }                 author (task: or admin+)
+DELETE /api/orgs/:org/conversations/:id                           author, discussions only
+POST   /api/orgs/:org/conversations/:id/chat                      author, streams the assistant's answer (AI SDK protocol)
+POST   /api/orgs/:org/conversations/:id/messages { text }         task author or admin+, done tasks only → a new agent turn
+GET    /api/orgs/:org/status                                      viewer+  per project: health, uptime, last commit, deployment, last task
+POST   /api/orgs/:org/projects/:id/refresh                        member+  check health and git now (rate limited)
+
 # tracking
 GET    /api/orgs/:org/stats?days=30                               viewer+  totals, success rate, average duration, per day, per project
 GET    /api/orgs/:org/usage?days=30                               admin+   spend and calls per day, member, provider; budget and projection
@@ -114,7 +129,8 @@ On first start with an empty user table, Atelier creates the *Default* organizat
 | **U5** | One-time task token and per-organization model keys in the proxy, monthly budget | ✅ |
 | **U6a** | Organization creation, members, invitations: API, privilege rules, tests | ✅ |
 | **U6b** | Web UI: members, invitations (copy the link), projects, secrets, budget, accept-invite page, organization picker | ✅ |
-| later | OIDC and GitLab / GitHub OAuth sign-in | planned |
+| **C1–C4** | Knowledge, discussions with the AI SDK and attachments, tasks as conversations, dashboard status, tour and guide — see [conversations design](conversations-design.md) | ✅ |
+| later | OIDC and GitLab / GitHub OAuth sign-in; the embedded [code editor](editor-design.md) | planned |
 
 ### How U5 works
 
@@ -134,7 +150,10 @@ Everything above is reachable from the browser (the UI text is in French). Pages
 
 | Page | Who | What you can do |
 |---|---|---|
-| Overview | everyone | Success rate, activity, spend, per-project figures, live tasks, recent activity |
+| Overview | everyone | Per-project health, last commit and latest task; success rate, activity, spend, live tasks, recent activity; the first-steps card |
+| Conversations | member+ (read: everyone) | Discuss with the assistant or start a task; a task is a thread with follow-up adjustments |
+| Knowledge | read: everyone · write: admin+ | Markdown items for the assistant and the agent, with a "test the selection" tool and a budget meter |
+| Guide | everyone | How it works, guided first steps, glossary, FAQ, replay of the welcome tour |
 | Tasks | everyone | Filter (status, project, member, text, dates), start a task, follow it live, retry, cancel |
 | Projects | read: everyone · manage: admin+ | Create, edit, delete, **check access** to the repository, see recent tasks and figures |
 | Team | admin+ | Members and roles, removal and leaving, invitations (the link is shown once, with **Copy**), revocation |

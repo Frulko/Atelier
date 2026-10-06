@@ -1,6 +1,6 @@
 # Conversations, knowledge and the guided tour
 
-**Status:** planned. Each part is ticked off here when it ships.
+**Status:** phases 1 to 4 have shipped (knowledge, discussions with attachments, tasks as conversations, tour and guide); phase 5 is this documentation. Remaining: a settings page for the assistant's provider and model, token totals on the usage page.
 
 Until now a *task* was a form: you wrote a request, then watched a log. This design makes the **conversation window** the centre of the product, adds a **knowledge base** that both the assistant and the agent read, and adds a **guided tour** that walks a newcomer through a realistic use case.
 
@@ -62,4 +62,4 @@ A newcomer should never face an empty screen wondering what to do.
 - The discussion assistant cannot read the repository: for questions that need the code, use a task (the agent can read it).
 - Chat consumption is tracked in tokens, not dollars, so the monthly budget (in dollars, from task costs) does not count it yet; it does stop new chats when the budget is already spent.
 - Retrieval is lexical, not semantic.
-- The first version supports text only: no file or image attachments.
+- Attachments are limited to images, PDFs and text files (4 files, 4 MB each); they are stored in the database and depend on the provider accepting them.

@@ -38,6 +38,12 @@ Atelier is configured through environment variables (see [`.env.example`](../.en
 | `PUBLIC_DIR` | `web/dist` (the image sets `/app/public`) | Where the built web application is served from |
 | `ATELIER_FAKE_AGENT` | off | `1` uses the deterministic fake agent (demo and tests) |
 
+### Assistant and monitoring
+
+The discussion assistant uses the model **of the organization**: provider (`anthropic`, `openai`, `openrouter`) and model are set per organization through `PATCH /api/orgs/:org { chatProvider, chatModel }` (default Anthropic, `claude-sonnet-5-5`; no page for it yet) and the key is the organization's own provider-key secret. Without a key the chat answers with a clear error. With `ATELIER_FAKE_AGENT=1` a deterministic fake model answers instead.
+
+Each project may have a **site address** and a **health address** (Projects → Edit). The monitor tests it every minute and reads the base branch's last commit every five minutes. See `ATELIER_HEALTH_ALLOW_PRIVATE` above for internal addresses.
+
 ### First-start import only
 
 `PROJECTS_JSON` (or `/data/projects.json`), `GIT_TOKEN*` and `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `OPENROUTER_API_KEY` are read **once**, on the first start, to populate the Default organization; see [Multi-tenancy](multi-tenancy.md#upgrading-from-the-single-user-version). **After that the proxy never reads them**: model keys are per-organization secrets. You can start with none and add them through the API.

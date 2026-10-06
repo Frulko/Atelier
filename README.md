@@ -10,8 +10,12 @@ A teammate writes *"add a volume discount to the Travel tab"*. An AI agent edits
 
 <table>
   <tr>
-    <td><a href="docs/img/app-overview.jpg"><img src="docs/img/app-overview.jpg" alt="Overview: success rate, activity, spend and recent tasks"></a></td>
-    <td><a href="docs/img/app-task.jpg"><img src="docs/img/app-task.jpg" alt="A task with its live journal and the files changed"></a></td>
+    <td><a href="docs/img/app-overview.jpg"><img src="docs/img/app-overview.jpg" alt="Overview: each project's health, last commit and latest task, then success rate, activity and spend"></a></td>
+    <td><a href="docs/img/app-task.jpg"><img src="docs/img/app-task.jpg" alt="A task is a conversation: each message opens an agent turn with its journal, and you can ask for adjustments"></a></td>
+  </tr>
+  <tr>
+    <td><a href="docs/img/app-chat.jpg"><img src="docs/img/app-chat.jpg" alt="Discuss mode: an assistant that cites the team's knowledge it used"></a></td>
+    <td><a href="docs/img/app-guide.jpg"><img src="docs/img/app-guide.jpg" alt="The guide and the guided first steps"></a></td>
   </tr>
   <tr>
     <td><a href="docs/img/app-usage.jpg"><img src="docs/img/app-usage.jpg" alt="Usage: monthly budget, spend and calls per member, project and provider"></a></td>
@@ -25,6 +29,13 @@ A teammate writes *"add a volume discount to the Travel tab"*. An AI agent edits
 - **The sandbox is disposable and blind.** One container per task, no secret, no Internet; its only way out is a proxy that adds the real API key.
 - **Nothing ships without a human.** The agent only ever produces a merge/pull request.
 - **Teams are isolated.** Organizations, roles, per-organization encrypted secrets and projects.
+
+## What you can do
+
+- **Discuss** with an assistant that has read your team's *knowledge* (tone, rules, vocabulary) and tells you which items it used. Nothing is modified; discussions are private to their author. Attach images, PDFs or text files.
+- **Run a task**: the agent changes the code in a sandbox. A task is also a conversation — ask for adjustments and it updates the same branch and merge request.
+- **See where each project stands**: site health, last commit, deployment, latest task.
+- **Be taken by the hand**: a welcome tour, a guide and a guided first use case (a bakery that wants a contact page).
 
 ## Quick start
 
@@ -50,7 +61,9 @@ To run it for real (your own projects, a real model, a real forge), see **[Deplo
 | **Real Claude agent**, **real GitLab MR**, **real GitHub PR** | ⚠️ implemented, **not yet exercised** (no key or forge in the dev environment) |
 | A full web application: overview, tasks, projects, team, integrations, usage, audit log, organization and account pages (light and dark, phone-ready) | ✅ working, driven in a real browser by the smoke test |
 | Organizations, members, invitations, projects, secrets, budget, audit log, sessions | ✅ working, API and UI |
-| SSO (OIDC, GitLab / GitHub sign-in), real-agent validation, previews, audit log | 🚧 next ([roadmap](docs/roadmap.md)) |
+| Conversations: a streaming assistant (Vercel AI SDK, per-organization provider and model) with file attachments, a knowledge base, tasks as conversations with follow-up turns on the same branch | ✅ working, tested with a fake model (no real provider call yet) |
+| Dashboard health and git status, welcome tour, guide and guided first steps | ✅ working, driven in a real browser (forge deployments not exercised against a real forge) |
+| Embedded code editor (Monaco), SSO (OIDC, GitLab / GitHub sign-in), real-agent validation, previews | 🚧 next ([editor design](docs/editor-design.md), [roadmap](docs/roadmap.md)) |
 
 Read **[Security → known limitations](docs/security.md#known-limitations)** before exposing it to anyone.
 
@@ -67,6 +80,7 @@ Read **[Security → known limitations](docs/security.md#known-limitations)** be
 | [Roadmap](docs/roadmap.md) | Milestones and the path to a multi-tenant SaaS |
 | [Web application design](docs/ui-design.md) | The full SaaS interface: pages, stack, backend additions, phases |
 | [Conversations, knowledge and the tour](docs/conversations-design.md) | One window for discussing and for tasks, a knowledge base, and a guided tour built on a use case |
+| [Embedded code editor](docs/editor-design.md) | Design of an in-browser editor that commits to a branch under the same review rules (planned) |
 
 Contributing with an AI assistant or by hand? Start with **[CLAUDE.md](CLAUDE.md)**.
 

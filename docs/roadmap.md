@@ -8,6 +8,8 @@
 | **U1–U5** | Accounts, sessions, organizations and roles, encrypted secrets, projects in the database, per-organization model keys with task tokens and a monthly budget — see [Multi-tenancy](multi-tenancy.md) | ✅ |
 | **U6a** | Organization creation, members and invitations (API) | ✅ |
 | **U6b** | Web UI for organizations, members, invitations, projects, secrets and the budget | ✅ |
+| **C1–C4** | Knowledge base, discussion assistant (AI SDK, attachments), tasks as conversations with follow-up turns, dashboard health and git status, welcome tour, guide and first steps | ✅ |
+| **Editor** | In-browser code editor (Monaco) that commits to a branch under the same review rules — [design](editor-design.md) | planned |
 | **SSO** | OIDC and GitLab / GitHub sign-in | planned |
 | **M2** | Real agent validated end to end, preview per merge request, QA agent with screenshots | planned |
 | **M3** | Release button and rollback, immutable audit log | planned |
