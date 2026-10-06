@@ -167,7 +167,7 @@ Everything above is reachable from the browser (the UI text is in French). Pages
 | Knowledge | read: everyone · write: admin+ | Markdown items for the assistant and the agent, with a "test the selection" tool and a budget meter |
 | Guide | everyone | How it works, guided first steps, glossary, FAQ, replay of the welcome tour |
 | Tasks | everyone | Filter (status, project, member, text, dates), start a task, follow it live, retry, cancel |
-| Projects | read: everyone · manage: admin+ | Create, edit, delete, **check access** to the repository, see recent tasks and figures |
+| Projects | read: everyone · manage: admin+ | A project page with a sub-menu — Overview (status, figures, recent tasks, conversations and knowledge), Tasks, Conversations, Knowledge, Configuration — and one **New** button that starts a task or a discussion on that project. Admins edit it, **check access** to the repository and delete it |
 | Team | admin+ | Members and roles, removal and leaving, invitations (the link is shown once, with **Copy**), revocation |
 | Integrations | admin+ | Git tokens and model keys: add, rename, rotate, delete; which projects use each, last use |
 | Usage | admin+ | Monthly budget with projection, spend and calls per day, per member, project and provider |

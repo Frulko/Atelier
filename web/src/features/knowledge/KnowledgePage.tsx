@@ -21,14 +21,14 @@ import type { KnowledgeBrief, KnowledgePreview } from "../../lib/types";
 
 const BUDGET = 24_000, MAX = 12_000;
 
-function Editor({ open, onClose, item, preset }: { open: boolean; onClose: () => void; item?: KnowledgeBrief; preset?: { title: string; content: string } }) {
+function Editor({ open, onClose, item, preset }: { open: boolean; onClose: () => void; item?: KnowledgeBrief; preset?: { title: string; content: string; projectId?: string } }) {
   const { orgId } = useOrg();
   const toast = useToast();
   const projects = useQuery(projectsQuery(orgId));
   const full = useQuery({ ...knowledgeItemQuery(orgId, item?.id ?? ""), enabled: open && !!item });
   const [title, setTitle] = useState(item?.title ?? preset?.title ?? "");
   const [content, setContent] = useState<string | null>(preset?.content ?? null);
-  const [scope, setScope] = useState(item?.projectId ?? "");
+  const [scope, setScope] = useState(item?.projectId ?? preset?.projectId ?? "");
   const [enabled, setEnabled] = useState(item?.enabled ?? true);
   const [pinned, setPinned] = useState(item?.pinned ?? false);
   const [tab, setTab] = useState<"write" | "preview">("write");
@@ -122,8 +122,8 @@ export function KnowledgePage() {
   const list = useQuery(knowledgeQuery(orgId));
   const projects = useQuery(projectsQuery(orgId));
   const toast = useToast();
-  const starter = knowledgeRoute.useSearch().starter;
-  const [editing, setEditing] = useState<{ item?: KnowledgeBrief; preset?: { title: string; content: string } } | null>(isAdmin && starter ? { preset: BAKERY.knowledge } : null);
+  const { starter, project: forProject } = knowledgeRoute.useSearch();
+  const [editing, setEditing] = useState<{ item?: KnowledgeBrief; preset?: { title: string; content: string; projectId?: string } } | null>(isAdmin && starter ? { preset: BAKERY.knowledge } : isAdmin && forProject ? { preset: { title: "", content: "", projectId: forProject } } : null);
   const [scope, setScope] = useState<"all" | "org" | "project">("all");
   const [q, setQ] = useState("");
   const name = new Map(projects.data?.map((p) => [p.id, p.name]));
@@ -180,7 +180,7 @@ export function KnowledgePage() {
             </ul>
           )}
       </Section>
-      {editing && <Editor key={editing.item?.id ?? "new"} open onClose={() => { setEditing(null); if (starter) navigate({ to: ".", search: {}, replace: true }); }} item={editing.item} preset={editing.preset} />}
+      {editing && <Editor key={editing.item?.id ?? "new"} open onClose={() => { setEditing(null); if (starter || forProject) navigate({ to: ".", search: {}, replace: true }); }} item={editing.item} preset={editing.preset} />}
     </>
   );
 }

@@ -68,9 +68,9 @@ export const invalidateOrg = (o: string, ...parts: string[]) =>
 /** Recharge l'identité de force (et pas seulement « marquer périmée ») : le routeur lit ce cache pour décider où envoyer la personne. */
 export const refreshMe = (qc: QueryClient) => qc.fetchQuery({ ...meQuery, staleTime: 0 });
 
-export const conversationsQuery = (o: string, mode?: string) => queryOptions({
-  queryKey: ["org", o, "conversations", mode ?? "all"],
-  queryFn: () => api.get<ConversationPage>(`${org(o)}/conversations${qs({ mode, limit: 100 })}`),
+export const conversationsQuery = (o: string, mode?: string, project?: string) => queryOptions({
+  queryKey: ["org", o, "conversations", mode ?? "all", project ?? "all"],
+  queryFn: () => api.get<ConversationPage>(`${org(o)}/conversations${qs({ mode, project, limit: 100 })}`),
 });
 export const conversationQuery = (o: string, id: string) => queryOptions({
   queryKey: ["org", o, "conversation", id],

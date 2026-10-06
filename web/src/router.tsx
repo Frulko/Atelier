@@ -90,8 +90,12 @@ const conversationRoute = createRoute({
   validateSearch: (s: Record<string, unknown>) => compact({ first: str(s.first) }),
 });
 const projectsRoute = child("projects", ProjectsPage);
-const projectRoute = createRoute({ getParentRoute: () => orgRoute, path: "projects/$projectId", component: ProjectDetailPage });
-const knowledgeRoute = createRoute({ getParentRoute: () => orgRoute, path: "knowledge", component: KnowledgePage, validateSearch: (s: Record<string, unknown>) => compact({ starter: s.starter === "bakery" ? s.starter : undefined }) });
+const PROJECT_TABS = ["apercu", "taches", "conversations", "connaissances", "configuration"] as const;
+const projectRoute = createRoute({
+  getParentRoute: () => orgRoute, path: "projects/$projectId", component: ProjectDetailPage,
+  validateSearch: (s: Record<string, unknown>) => compact({ tab: (PROJECT_TABS as readonly unknown[]).includes(s.tab) && s.tab !== "apercu" ? (s.tab as string) : undefined }),
+});
+const knowledgeRoute = createRoute({ getParentRoute: () => orgRoute, path: "knowledge", component: KnowledgePage, validateSearch: (s: Record<string, unknown>) => compact({ starter: s.starter === "bakery" ? s.starter : undefined, project: str(s.project) }) });
 const teamRoute = createRoute({ getParentRoute: () => orgRoute, path: "team", component: TeamPage, beforeLoad: adminOnly });
 const integrationsRoute = createRoute({ getParentRoute: () => orgRoute, path: "integrations", component: IntegrationsPage, beforeLoad: adminOnly });
 const usageRoute = createRoute({ getParentRoute: () => orgRoute, path: "usage", component: UsagePage, beforeLoad: adminOnly });

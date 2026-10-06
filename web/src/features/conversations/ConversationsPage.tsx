@@ -21,13 +21,13 @@ const MODES: { id: Mode; label: string; hint: string; icon: typeof Bot }[] = [
   { id: "task", label: "Tâche", hint: "L'agent modifie le code dans un bac à sable et prépare une proposition à relire.", icon: ListChecks },
 ];
 
-function NewDialog({ open, onClose, initial }: { open: boolean; onClose: () => void; initial?: { mode: Mode; text: string } }) {
+export function NewConversationDialog({ open, onClose, initial, defaultProject }: { open: boolean; onClose: () => void; initial?: { mode: Mode; text: string }; defaultProject?: string }) {
   const { orgId, role } = useOrg();
   const navigate = useNavigate();
   const projects = useQuery(projectsQuery(orgId));
   const canTask = atLeast(role, "member");
   const [mode, setMode] = useState<Mode>(initial?.mode ?? "chat");
-  const [project, setProject] = useState("");
+  const [project, setProject] = useState(defaultProject ?? "");
   const [text, setText] = useState(initial?.text ?? "");
   useEffect(() => { if (open) setProject((p) => p || projects.data?.[0]?.id || ""); }, [open, projects.data]);
 
@@ -107,7 +107,7 @@ export function ConversationsPage() {
           ))}
         </Card>
       )}
-      {open && <NewDialog open onClose={() => { setOpen(false); if (search.new) navigate({ to: ".", search: {}, replace: true }); }} initial={search.new ? { mode: search.new as Mode, text: search.text ?? "" } : undefined} />}
+      {open && <NewConversationDialog open onClose={() => { setOpen(false); if (search.new) navigate({ to: ".", search: {}, replace: true }); }} initial={search.new ? { mode: search.new as Mode, text: search.text ?? "" } : undefined} />}
     </>
   );
 }

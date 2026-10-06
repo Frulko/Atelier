@@ -39,7 +39,7 @@ function Health({ s }: { s: ProjectStatus }) {
     : <Badge tone="bad">Hors ligne{s.health.error ? ` · ${s.health.error}` : ""}</Badge>;
 }
 
-function ProjectCard({ s }: { s: ProjectStatus }) {
+export function ProjectCard({ s }: { s: ProjectStatus }) {
   const { orgId, isMember } = useOrg();
   const toast = useToast();
   const refresh = useMutation({

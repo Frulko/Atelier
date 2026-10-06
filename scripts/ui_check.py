@@ -118,6 +118,19 @@ with sync_playwright() as p:
     expect(admin.get_by_role("heading", name="Todo API (Node)")).to_be_visible()
     shot(admin, "05-projects")
     admin.get_by_role("link").filter(has_text="Todo API (Node)").click()
+    expect(admin.get_by_role("tab", name=re.compile("^Tâches"))).to_be_visible()   # the project's sub-menu
+    for tabname in ["Conversations", "Connaissances"]:
+        admin.get_by_role("tab", name=re.compile(f"^{tabname}")).click()
+        expect(admin.get_by_role("tab", name=re.compile(f"^{tabname}"))).to_have_attribute("aria-selected", "true")
+    admin.get_by_role("tab", name=re.compile("^Tâches")).click()
+    expect(admin).to_have_url(re.compile(r"tab=taches"))                       # the tab lives in the URL
+    admin.get_by_role("button", name="Nouveau", exact=True).click()             # one button, two modes: task or discussion
+    dlg = admin.get_by_role("dialog")
+    expect(dlg.get_by_role("radio", name="Discuter")).to_be_visible()
+    expect(dlg.get_by_role("radio", name="Tâche")).to_be_visible()
+    expect(dlg.get_by_label("Projet")).to_have_value(re.compile(".+"))          # the project is already chosen
+    dlg.get_by_role("button", name="Annuler").click()
+    admin.get_by_role("tab", name="Configuration").click()
     admin.get_by_role("button", name="Vérifier l'accès").click()
     expect(admin.get_by_text("Tout répond")).to_be_visible()                    # git ls-remote worked
     admin.get_by_role("button", name="Modifier").click()                         # give the project a site address to watch
@@ -139,6 +152,7 @@ with sync_playwright() as p:
     dlg.get_by_label("Dépôt git").fill("/fixtures/boulangerie.git")
     dlg.get_by_role("button", name="Créer le projet").click()
     expect(admin.get_by_role("heading", level=1, name=f"Projet UI {RUN}")).to_be_visible()
+    admin.get_by_role("tab", name="Configuration").click()
     delete = admin.get_by_role("button", name=re.compile("Supprimer|Confirmer"))   # its label changes once armed
     delete.click()
     delete.click()                                                                        # two-click confirmation
