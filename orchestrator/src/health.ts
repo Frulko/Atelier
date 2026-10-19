@@ -1,7 +1,7 @@
 import { lookup } from "node:dns";
 import http from "node:http";
 import https from "node:https";
-import { isIP } from "node:net";
+import { isIP, BlockList } from "node:net";
 import { cfg } from "./config.ts";
 import type { HealthResult } from "./db.ts";
 
@@ -22,21 +22,18 @@ export function urlProblem(v: unknown): string | null {
  * le faire parler aux métadonnées du cloud (lien local) — jamais. Les adresses locales et privées (127/8, 10/8, 172.16/12,
  * 192.168/16, fc00::/7…) ne sont permises que si l'hôte l'a explicitement décidé (ATELIER_HEALTH_ALLOW_PRIVATE=1).
  */
-export function addressAllowed(address: string): boolean {
-  const a = address.toLowerCase().replace(/^::ffff:/, "");
-  if (isIP(a) === 4) {
-    const [x = 0, y = 0] = a.split(".").map(Number);
-    if (x === 169 && y === 254) return false;                         // lien local, dont 169.254.169.254
-    if (x === 0) return false;
-    const priv = x === 10 || x === 127 || (x === 172 && y >= 16 && y <= 31) || (x === 192 && y === 168) || (x === 100 && y >= 64 && y <= 127);
-    return !priv || cfg.healthAllowPrivate;
-  }
-  if (isIP(a) === 6) {
-    if (/^fe[89ab]/.test(a) || a === "::") return false;               // lien local
-    const priv = a === "::1" || /^f[cd]/.test(a);
-    return !priv || cfg.healthAllowPrivate;
-  }
-  return false;
+const forbidden = new BlockList();
+for (const [network,prefix] of [["0.0.0.0",8],["169.254.0.0",16],["224.0.0.0",4],["240.0.0.0",4]] as const) forbidden.addSubnet(network,prefix,"ipv4");
+forbidden.addSubnet("fe80::",10,"ipv6"); forbidden.addAddress("::","ipv6");
+const privateAddresses = new BlockList();
+for (const [network,prefix] of [["10.0.0.0",8],["127.0.0.0",8],["172.16.0.0",12],["192.168.0.0",16],["100.64.0.0",10],["198.18.0.0",15]] as const) privateAddresses.addSubnet(network,prefix,"ipv4");
+privateAddresses.addSubnet("fc00::",7,"ipv6"); privateAddresses.addAddress("::1","ipv6");
+export function addressAllowed(address: string, allowPrivate = cfg.healthAllowPrivate): boolean {
+  const family=isIP(address); if(!family)return false;
+  const type=family===4?"ipv4":"ipv6";
+  // BlockList also recognizes hexadecimal IPv4-mapped IPv6 addresses (metadata must never bypass the guard).
+  if(forbidden.check(address,type))return false;
+  return allowPrivate || !privateAddresses.check(address,type);
 }
 
 /** La vérification est faite au moment de la CONNEXION (pas avant) : pas de fenêtre pour changer l'adresse entre-temps. */

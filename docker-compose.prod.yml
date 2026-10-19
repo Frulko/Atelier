@@ -3,6 +3,7 @@
 #   • Docker seul : cp .env.example .env && docker compose -f docker-compose.prod.yml up -d
 # Images par défaut : celles du dépôt (ghcr.io/frulko/atelier). Pour utiliser les vôtres : ATELIER_IMAGE et ATELIER_SANDBOX_IMAGE
 # (construire et publier : scripts/release.sh, voir docs/deployment.md). Épinglez une version (:1.0.0) plutôt que :latest en production.
+# GitLab auto-hébergé, registre privé et Portainer : docs/gitlab-portainer.md.
 name: atelier
 
 services:
@@ -24,6 +25,7 @@ services:
       TRUST_PROXY: ${TRUST_PROXY:-}
       COOKIE_SECURE: ${COOKIE_SECURE:-}
       ATELIER_MASTER_KEY: ${ATELIER_MASTER_KEY:-}
+      ATELIER_GIT_ALLOW_PRIVATE: ${ATELIER_GIT_ALLOW_PRIVATE:-}
       ATELIER_GIT_HOSTS: ${ATELIER_GIT_HOSTS:-}
       ATELIER_HEALTH_ALLOW_PRIVATE: ${ATELIER_HEALTH_ALLOW_PRIVATE:-}
       # Clés et projets lus UNE fois, au premier démarrage, pour peupler l'organisation par défaut (ensuite : l'interface).
@@ -36,6 +38,15 @@ services:
       SANDBOX_IMAGE: ${ATELIER_SANDBOX_IMAGE:-ghcr.io/frulko/atelier-sandbox:latest}
       SANDBOX_NETWORK: ${ATELIER_SANDBOX_NET:-atelier-sandbox}
       PROXY_URL: http://${ATELIER_CONTAINER:-atelier-orchestrator}:8081
+      ATELIER_APPS_SUBNET_POOL: ${ATELIER_APPS_SUBNET_POOL:-10.240.0.0/16}
+      ATELIER_APPS_DOMAIN: ${ATELIER_APPS_DOMAIN:-}
+      ATELIER_APPS_PUBLIC_PORT: ${ATELIER_APPS_PUBLIC_PORT:-}
+      ATELIER_APPS_SCHEME: ${ATELIER_APPS_SCHEME:-https}
+      ATELIER_OIDC_ISSUER: ${ATELIER_OIDC_ISSUER:-}
+      ATELIER_OIDC_CLIENT_ID: ${ATELIER_OIDC_CLIENT_ID:-}
+      ATELIER_OIDC_CLIENT_SECRET: ${ATELIER_OIDC_CLIENT_SECRET:-}
+      ATELIER_PUBLIC_URL: ${ATELIER_PUBLIC_URL:-}
+      ATELIER_PUSH_SUBJECT: ${ATELIER_PUSH_SUBJECT:-mailto:admin@atelier.local}
       ATELIER_WORKDIR: ${ATELIER_WORKDIR:-/srv/atelier/work}
     volumes:
       # ⚠ Le socket Docker donne les droits root de l'hôte : machine dédiée, équipe de confiance (docs/security.md).
@@ -45,6 +56,7 @@ services:
       - data:/data
     ports:
       - "${ATELIER_PORT:-8080}:8080"
+      - "${ATELIER_APPS_BIND:-127.0.0.1}:${ATELIER_APPS_PORT:-8082}:8082"
     networks: [default, sandbox]
 
 volumes:

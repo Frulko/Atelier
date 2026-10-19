@@ -85,17 +85,17 @@ export function EditorPage() {
       t.saved = content;
       setDirty((d) => { const n = new Set(d); if (t.model.getValue() === content) n.delete(path); return n; });
       setSave("saved"); refreshChanges();
-    } catch (e) { setSave("error"); toast(`Enregistrement impossible : ${errorText(e)}`, "bad"); }
+    } catch (e) { setSave("error"); toast(`Enregistrement impossible : ${errorText(e)}`, "bad"); throw e; }
   }, [orgId, sid, refreshChanges, toast]);
 
   const schedule = useCallback((path: string) => {
     clearTimeout(timers.current[path]);
     setSave("pending");
-    timers.current[path] = setTimeout(() => void persist(path), SAVE_DELAY);
+    timers.current[path] = setTimeout(() => void persist(path).catch(() => {}), SAVE_DELAY);
   }, [persist]);
 
   useEffect(() => {
-    ed.current?.addAction({ id: "atelier.save", label: "Enregistrer", keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS], run: () => { const p = ed.current?.getModel()?.uri.path.slice(1); if (p) { clearTimeout(timers.current[decodeURIComponent(p)]); void persist(decodeURIComponent(p)); } } });
+    ed.current?.addAction({ id: "atelier.save", label: "Enregistrer", keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS], run: () => { const p = ed.current?.getModel()?.uri.path.slice(1); if (p) { clearTimeout(timers.current[decodeURIComponent(p)]); void persist(decodeURIComponent(p)).catch(() => {}); } } });
   }, [sid, persist]);
 
   const openFile = useCallback(async (path: string) => {
@@ -133,7 +133,7 @@ export function EditorPage() {
   }, [sid, openPath, template, orgId, openFile, refreshChanges, toast]);
 
   const closeTab = useCallback(async (path: string) => {
-    if (dirty.has(path)) { clearTimeout(timers.current[path]); await persist(path); }
+    if (dirty.has(path)) { clearTimeout(timers.current[path]); try { await persist(path); } catch { return; } }
     const t = tabsRef.current.find((x) => x.path === path); if (!t) return;
     const rest = tabsRef.current.filter((x) => x.path !== path);
     setTabs(rest);
@@ -235,7 +235,7 @@ export function EditorPage() {
                 </div>
               ) : (
                 <div className="min-h-0 flex-1 overflow-auto p-3">
-                  <Button size="sm" icon={check.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />} disabled={check.isPending} onClick={() => { void flush().then(() => check.mutate()); }}>Lancer la vérification</Button>
+                  <Button size="sm" icon={check.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />} disabled={check.isPending} onClick={() => { void flush().then(() => check.mutate()).catch(() => {}); }}>Lancer la vérification</Button>
                   <p className="mt-1 text-xs text-muted">Commande du projet : <code className="font-mono">{project?.check ?? "…"}</code>, dans un conteneur sans réseau.</p>
                   {check.data && <div className="mt-3"><p className={`flex items-center gap-1.5 text-sm font-medium ${check.data.ok ? "text-ok" : "text-bad"}`}>{check.data.ok ? <Check className="size-4" /> : <X className="size-4" />}{check.data.ok ? "La vérification passe." : "La vérification échoue."}</p><pre className="mt-2 max-h-40 overflow-auto rounded-lg bg-subtle p-2 font-mono text-xs" data-testid="check-output">{check.data.output || "(aucune sortie)"}</pre></div>}
                 </div>

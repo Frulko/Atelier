@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getRouteApi, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import { Button } from "../../components/ui/Button";
@@ -11,7 +11,8 @@ import { AuthLayout } from "./AuthLayout";
 const route = getRouteApi("/login");
 
 export function LoginPage() {
-  const { redirect } = route.useSearch();
+  const { redirect, sso } = route.useSearch();
+  const ssoConfig=useQuery({queryKey:["auth","sso"],queryFn:()=>api.get<{enabled:boolean;label:string}>("/api/auth/sso")});
   const router = useRouter();
   const qc = useQueryClient();
   const [email, setEmail] = useState("");
@@ -31,6 +32,8 @@ export function LoginPage() {
         <FormError error={login.error} />
         <Button variant="primary" type="submit" loading={login.isPending} className="mt-1 w-full">Se connecter</Button>
       </form>
+      {sso && <p role="alert" className="mt-4 text-sm text-warn">{sso==="link_required"?"Connecte-toi avec ton mot de passe, puis associe Keycloak depuis ton compte. Une adresse e-mail identique ne suffit pas à créer un accès.":"La connexion Keycloak n'a pas abouti. Réessaie ou utilise ton mot de passe."}</p>}
+      {ssoConfig.data?.enabled && <a href={`/api/auth/sso/start${redirect?`?returnTo=${encodeURIComponent(redirect)}`:""}`} className="mt-4 block"><Button className="w-full">Se connecter avec Keycloak</Button></a>}
       <p className="mt-6 text-sm text-muted">Pas de compte ? L'accès se fait sur invitation : demande un lien à un administrateur de ton organisation.</p>
     </AuthLayout>
   );

@@ -59,6 +59,17 @@ function Password() {
   );
 }
 
+function SsoAccount() {
+  const q=useQuery({queryKey:["me","sso"],queryFn:()=>api.get<{enabled:boolean;linked:boolean}>("/api/me/sso")});
+  const [password,setPassword]=useState("");
+  const link=useMutation({mutationFn:()=>api.post<{url:string}>("/api/me/sso/link"),onSuccess:value=>window.location.assign(value.url)});
+  const unlink=useMutation({mutationFn:()=>api.del("/api/me/sso",{password}),onSuccess:()=>{setPassword("");queryClient.invalidateQueries({queryKey:["me","sso"]});}});
+  return <Card className="grid gap-4 p-6"><p className="text-sm text-muted">{q.data?.enabled?(q.data.linked?"Ton identité Keycloak est associée. Tu peux te connecter par SSO ou avec ton mot de passe.":"Associe ton compte Keycloak. Son adresse e-mail doit être vérifiée et correspondre à celle de ton compte Atelier."):"Le SSO Keycloak peut être activé par l'administrateur du serveur. La connexion classique reste disponible."}</p>
+    {q.data?.enabled&&!q.data.linked&&<div><Button onClick={()=>link.mutate()} loading={link.isPending}>Associer Keycloak</Button></div>}
+    {q.data?.linked&&<form className="grid gap-3 sm:max-w-md" onSubmit={e=>{e.preventDefault();unlink.mutate();}}><Field label="Mot de passe actuel pour dissocier">{id=><Input id={id} type="password" autoComplete="current-password" required value={password} onChange={e=>setPassword(e.target.value)}/>}</Field><div><Button type="submit" loading={unlink.isPending}>Dissocier Keycloak</Button></div></form>}
+    <FormError error={q.error??link.error??unlink.error}/></Card>;
+}
+
 function Sessions() {
   const toast = useToast();
   const q = useQuery(sessionsQuery);
@@ -128,6 +139,7 @@ export function AccountPage() {
         <Section title="Organisations" index={2}>
           <Card className="divide-y divide-line">{me?.orgs.map((o) => <div key={o.id} className="flex items-center justify-between gap-3 px-5 py-3.5"><span className="text-[15px]">{o.name}</span><RoleBadge role={o.role} /></div>)}</Card>
         </Section>
+        <Section title="Connexion SSO" index={3}><SsoAccount/></Section>
         <Section title="Mot de passe" index={3}><Password /></Section>
         <Section title="Appareils connectés" hint="Révoque une session si tu ne reconnais pas l'appareil." index={4}><Sessions /></Section>
         <Section title="Apparence" index={5}><Appearance /></Section>

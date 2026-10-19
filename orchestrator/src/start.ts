@@ -1,4 +1,5 @@
 import { addEvent, createTask, insertConversation, insertMessage, updateTask, getTask, type ProjectRow } from "./db.ts";
+import { assertBudget } from "./budget.ts";
 import { enqueue, newId } from "./pipeline.ts";
 import { titleFrom } from "./chat.ts";
 
@@ -8,6 +9,7 @@ import { titleFrom } from "./chat.ts";
  * promotion d'une discussion) aient le même résultat.
  */
 export function startTask(o: { orgId: string; userId: string; project: ProjectRow; prompt: string; parentConversationId?: string | null; note?: string }) {
+  assertBudget(o.orgId);
   const taskId = newId();
   createTask(taskId, o.orgId, o.userId, o.project.id, o.prompt);
   addEvent(taskId, "step", o.note ?? "Demande reçue, en file d'attente.");
@@ -21,9 +23,11 @@ export const MAX_TURNS = 10;
 
 /** Ajustement d'une tâche terminée : un tour de plus de l'agent, sur la même branche. Le message devient celui de la conversation. */
 export function followUp(taskId: string, conversationId: string, text: string) {
-  const turn = getTask(taskId)!.turn + 1;
+  const task=getTask(taskId)!;
+  assertBudget(task.org_id!);
+  const turn = task.turn + 1;
   insertMessage(conversationId, "user", [{ type: "text", text }]);
-  updateTask(taskId, { status: "queued", turn, followup: text, finished_at: null });
+  updateTask(taskId, { status: "queued", turn, followup: text, finished_at: null, last_error: null });
   addEvent(taskId, "step", `Demande d'ajustement (tour ${turn}), en file d'attente.`);
   enqueue(taskId);
 }

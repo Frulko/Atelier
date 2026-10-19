@@ -5,17 +5,17 @@ import { randomBytes } from "node:crypto";
  * organisation, et meurt avec elle. Le proxy s'en sert pour savoir pour qui il travaille (clé, budget).
  * ponytail: en mémoire, donc un seul orchestrateur ; une table partagée si on en lance plusieurs.
  */
-type Ctx = { taskId: string; orgId: string };
+type Ctx = { taskId: string; orgId: string; holdId?: string; scope: "model" | "npm"; controller: AbortController };
 const live = new Map<string, Ctx>();
 
-export function issueTaskToken(taskId: string, orgId: string): string {
+export function issueTaskToken(taskId: string, orgId: string, scope: Ctx["scope"] = "model", holdId?: string): string {
   const t = `atl_${randomBytes(24).toString("base64url")}`;
-  live.set(t, { taskId, orgId });
+  live.set(t, { taskId, orgId, scope, holdId, controller: new AbortController() });
   return t;
 }
 
 export const resolveTaskToken = (token: string | undefined) => (token ? live.get(token) : undefined);
 
 export function revokeTaskTokens(taskId: string) {
-  for (const [t, c] of live) if (c.taskId === taskId) live.delete(t);
+  for (const [t, c] of live) if (c.taskId === taskId) { c.controller.abort(); live.delete(t); }
 }

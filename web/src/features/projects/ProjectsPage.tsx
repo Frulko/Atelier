@@ -39,8 +39,8 @@ export function ProjectsPage() {
                   <Link to="/o/$orgId/projects/$projectId" params={{ orgId, projectId: p.id }} className="group block h-full">
                     <Card className="flex h-full flex-col gap-4 p-5 transition group-hover:-translate-y-0.5 group-hover:border-line-strong">
                       <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0"><h2 className="truncate font-display text-xl text-ink group-hover:text-accent">{p.name}</h2><p className="mt-0.5 truncate font-mono text-xs text-muted">{repoLabel(p.repo)}</p></div>
-                        <Badge tone={p.forge === "none" ? "muted" : "info"}>{FORGE_LABEL[p.forge]}</Badge>
+                        <div className="min-w-0"><h2 className="truncate font-display text-xl text-ink group-hover:text-accent">{p.name}</h2><p className="mt-0.5 truncate font-mono text-xs text-muted">{p.managed ? "Dépôt géré par Atelier" : repoLabel(p.repo)}</p></div>
+                        <Badge tone={p.forge === "none" ? "muted" : "info"}>{p.managed ? "Atelier" : FORGE_LABEL[p.forge]}</Badge>
                       </div>
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[13px] text-muted">
                         <span className="flex items-center gap-1.5 font-mono"><GitBranch className="size-3.5" aria-hidden />{p.branch}</span>

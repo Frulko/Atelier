@@ -6,6 +6,7 @@ import { cfg } from "./config.ts";
 export const STATUSES = ["queued", "running", "done", "no_changes", "failed", "cancelled"] as const;
 export type Status = (typeof STATUSES)[number];
 export type Task = {
+  waiting_question_id: string | null; workspace_saved: number;
   project_name?: string | null;
   id: string; org_id: string | null; user_id: string | null; project: string; prompt: string; status: Status;
   branch: string | null; mr_url: string | null; cost: number; created_at: number;
@@ -14,11 +15,12 @@ export type Task = {
   files_json: string | null; flagged: number;
   /** Tour de l'agent en cours ou dernier (1 = la demande initiale) et la demande de ce tour quand c'est un ajustement. */
   turn: number; followup: string | null;
+  last_error: string | null; pushed_sha: string | null; automation_id: string | null;
   user_email?: string | null;
 };
 export type Evt = { id: number; task_id: string; ts: number; type: string; text: string; turn?: number };
 
-const db = new DatabaseSync(cfg.dbFile);
+export const db = new DatabaseSync(cfg.dbFile);
 db.exec(`
   create table if not exists tasks (
     id text primary key, org_id text, user_id text, project text not null, prompt text not null,
@@ -106,7 +108,10 @@ db.exec("pragma foreign_keys = on");
 const orgCols = (db.prepare("pragma table_info(orgs)").all() as { name: string }[]).map((c) => c.name);
 if (!orgCols.includes("budget_usd_month")) db.exec("alter table orgs add column budget_usd_month real");
 if (!orgCols.includes("chat_provider")) db.exec("alter table orgs add column chat_provider text");
+if (!orgCols.includes("chat_input_price")) db.exec("alter table orgs add column chat_input_price real");
+if (!orgCols.includes("chat_output_price")) db.exec("alter table orgs add column chat_output_price real");
 if (!orgCols.includes("chat_model")) db.exec("alter table orgs add column chat_model text");
+for (const col of ["agent_model", "subagent_model"]) if (!orgCols.includes(col)) db.exec(`alter table orgs add column ${col} text`);
 const taskCols = (db.prepare("pragma table_info(tasks)").all() as { name: string }[]).map((c) => c.name);
 if (!taskCols.includes("org_id")) db.exec("alter table tasks add column org_id text");
 if (!taskCols.includes("user_id")) db.exec("alter table tasks add column user_id text");
@@ -116,6 +121,11 @@ if (!taskCols.includes("files_json")) db.exec("alter table tasks add column file
 if (!taskCols.includes("flagged")) db.exec("alter table tasks add column flagged integer not null default 0");
 if (!taskCols.includes("turn")) db.exec("alter table tasks add column turn integer not null default 1");
 if (!taskCols.includes("followup")) db.exec("alter table tasks add column followup text");
+if (!taskCols.includes("last_error")) db.exec("alter table tasks add column last_error text");
+if (!taskCols.includes("pushed_sha")) db.exec("alter table tasks add column pushed_sha text");
+if (!taskCols.includes("automation_id")) db.exec("alter table tasks add column automation_id text");
+for (const col of ["waiting_question_id"]) if (!taskCols.includes(col)) db.exec(`alter table tasks add column ${col} text`);
+if (!taskCols.includes("workspace_saved")) db.exec("alter table tasks add column workspace_saved integer not null default 0");
 const eventCols = (db.prepare("pragma table_info(events)").all() as { name: string }[]).map((c) => c.name);
 if (!eventCols.includes("turn")) db.exec("alter table events add column turn integer not null default 1");
 db.exec("create index if not exists tasks_org on tasks(org_id, created_at)");
@@ -125,7 +135,12 @@ if (!projectCols.includes("health_url")) db.exec("alter table projects add colum
 if (!projectCols.includes("instructions")) db.exec("alter table projects add column instructions text");
 if (!projectCols.includes("agent_model")) db.exec("alter table projects add column agent_model text");
 if (!projectCols.includes("agent_max_turns")) db.exec("alter table projects add column agent_max_turns integer");
+if (!projectCols.includes("runtime_json")) db.exec("alter table projects add column runtime_json text");
+if (!projectCols.includes("managed")) db.exec("alter table projects add column managed integer not null default 0");
 if (!projectCols.includes("agent_budget_usd")) db.exec("alter table projects add column agent_budget_usd real");
+if (!projectCols.includes("budget_usd_day")) db.exec("alter table projects add column budget_usd_day real");
+if (!projectCols.includes("budget_timezone")) db.exec("alter table projects add column budget_timezone text not null default 'Europe/Paris'");
+if (!projectCols.includes("subagent_model")) db.exec("alter table projects add column subagent_model text");
 if (!(db.prepare("pragma table_info(editor_sessions)").all() as { name: string }[]).some((c) => c.name === "mr_url") && (db.prepare("pragma table_info(editor_sessions)").all() as unknown[]).length) db.exec("alter table editor_sessions add column mr_url text");
 db.exec(`
   -- Dernier état connu de chaque projet (santé, dernier commit, déploiement) et historique de santé (7 jours).
@@ -149,7 +164,26 @@ db.exec(`
     created_at integer not null, last_active integer not null, mr_url text
   );
   create index if not exists editor_sessions_org on editor_sessions(org_id, user_id);
+  create table if not exists expenses (
+    id integer primary key autoincrement, org_id text not null, task_id text, ts integer not null, usd real not null
+  );
+  create index if not exists expenses_org on expenses(org_id, ts);
 `);
+const expenseCols = (db.prepare("pragma table_info(expenses)").all() as {name:string}[]).map(c=>c.name);
+if (!expenseCols.includes("project_id")) db.exec("alter table expenses add column project_id text");
+if (!expenseCols.includes("hold_id")) db.exec("alter table expenses add column hold_id text");
+db.exec(`create table if not exists budget_holds (
+  id text primary key, org_id text not null references orgs(id) on delete cascade,
+  project_id text references projects(id) on delete cascade, task_id text,
+  amount real not null, created_at integer not null
+); create index if not exists holds_org on budget_holds(org_id,created_at);`);
+if (!db.prepare("select 1 from meta where key = 'expenses-migrated'").get()) {
+  db.exec("begin");
+  try {
+    db.exec("insert into expenses (org_id, task_id, ts, usd) select org_id, id, created_at, cost from tasks where org_id is not null and cost > 0");
+    db.exec("insert into meta (key, value) values ('expenses-migrated', '1'); commit");
+  } catch (e) { db.exec("rollback"); throw e; }
+}
 const secretCols = (db.prepare("pragma table_info(secrets)").all() as { name: string }[]).map((c) => c.name);
 if (!secretCols.includes("last_used_at")) db.exec("alter table secrets add column last_used_at integer");
 const userCols = (db.prepare("pragma table_info(users)").all() as { name: string }[]).map((c) => c.name);
@@ -209,14 +243,23 @@ export const adoptOrphanTasks = (orgId: string) =>
 
 const TERMINAL: Status[] = ["done", "no_changes", "failed", "cancelled"];
 
-export const updateTask = (id: string, patch: Partial<Pick<Task, "status" | "branch" | "mr_url" | "cost" | "started_at" | "finished_at" | "files_json" | "flagged" | "turn" | "followup">>) => {
+export const updateTask = (id: string, patch: Partial<Pick<Task, "status" | "branch" | "mr_url" | "cost" | "started_at" | "finished_at" | "files_json" | "flagged" | "turn" | "followup" | "last_error" | "pushed_sha" | "automation_id" | "waiting_question_id" | "workspace_saved">>, expenseAt = Date.now()) => {
   // Les horodatages suivent le statut : début au passage en « running », fin dès qu'un état terminal est atteint.
   if (patch.status === "running" && patch.started_at === undefined) patch = { ...patch, started_at: Date.now() };
   if (patch.status && TERMINAL.includes(patch.status) && patch.finished_at === undefined) patch = { ...patch, finished_at: Date.now() };
   const keys = Object.keys(patch);
   if (!keys.length) return;
+  db.exec("savepoint update_task");
+  try {
+  if (patch.cost !== undefined) {
+    const task = getTask(id)!;
+    const delta = patch.cost - task.cost;
+    if (delta > 0 && task.org_id) db.prepare("insert into expenses (org_id, task_id, ts, usd, project_id, hold_id) values (?,?,?,?,?,(select id from budget_holds where task_id=? order by created_at desc limit 1))").run(task.org_id, id, expenseAt, delta, task.project, id);
+  }
   db.prepare(`update tasks set ${keys.map((k) => `${k} = ?`).join(", ")} where id = ?`)
     .run(...(Object.values(patch) as (string | number | null)[]), id);
+    db.exec("release update_task");
+  } catch(e) {db.exec("rollback to update_task; release update_task");throw e;}
   bus.emit(id, { id: 0, task_id: id, ts: Date.now(), type: "status", text: getTask(id)!.status } satisfies Evt);
 };
 
@@ -231,8 +274,14 @@ export const getEvents = (task_id: string, afterId = 0) =>
   db.prepare("select * from events where task_id = ? and id > ? order by id").all(task_id, afterId) as Evt[];
 
 /** Au démarrage, une tâche "running" est forcément orpheline (le conteneur a été tué avec nous). */
-export const failOrphans = () =>
-  db.prepare("update tasks set status = 'failed' where status in ('running','queued')").run();
+export const failOrphans = () => {
+  const tasks = db.prepare("select id, turn from tasks where status = 'running'").all() as { id: string; turn: number }[];
+  for (const t of tasks) {
+    updateTask(t.id, { status: t.turn > 1 ? "done" : "failed", last_error: "Exécution interrompue par un redémarrage. Tu peux la relancer." });
+    addEvent(t.id, "error", "Exécution interrompue par un redémarrage. Tu peux la relancer.");
+  }
+  return tasks.map(t=>t.id);
+};
 
 /* ------------------------- utilisateurs / organisations ------------------------- */
 
@@ -371,6 +420,8 @@ export type ProjectRow = {
   /** Adresse publique du site et adresse testée pour la santé (par défaut la même). */
   site_url?: string | null; health_url?: string | null;
   /** Configuration de l'IA du projet : instructions ajoutées par l'équipe, modèle, tours maximum, budget par exécution (null = valeurs par défaut). */
+  managed?: number; runtime_json?: string | null;
+  budget_usd_day?: number | null; budget_timezone?: string; subagent_model?: string | null;
   instructions?: string | null; agent_model?: string | null; agent_max_turns?: number | null; agent_budget_usd?: number | null;
 };
 
@@ -409,9 +460,9 @@ export const remapTaskProject = (orgId: string, from: string, to: string) =>
 
 /* ----------------------- organisation : budget mensuel ----------------------- */
 
-export type OrgRow = { id: string; name: string; budget_usd_month: number | null; chat_provider: string | null; chat_model: string | null };
+export type OrgRow = { id: string; name: string; budget_usd_month: number | null; chat_provider: string | null; chat_model: string | null; agent_model: string | null; subagent_model: string | null; chat_input_price: number | null; chat_output_price: number | null };
 export const getOrg = (id: string) =>
-  db.prepare("select id, name, budget_usd_month, chat_provider, chat_model from orgs where id = ?").get(id) as OrgRow | undefined;
+  db.prepare("select id, name, budget_usd_month, chat_provider, chat_model, chat_input_price, chat_output_price, agent_model, subagent_model from orgs where id = ?").get(id) as OrgRow | undefined;
 
 /** null = pas de plafond. */
 export const setOrgBudget = (orgId: string, usd: number | null) =>
@@ -422,7 +473,7 @@ export function monthSpend(orgId: string, now = Date.now()): number {
   const d = new Date(now);
   const start = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
   const end = Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1);
-  return (db.prepare("select coalesce(sum(cost), 0) as c from tasks where org_id = ? and created_at >= ? and created_at < ?").get(orgId, start, end) as { c: number }).c;
+  return (db.prepare("select coalesce(sum(usd), 0) as c from expenses where org_id = ? and ts >= ? and ts < ?").get(orgId, start, end) as { c: number }).c;
 }
 
 /** Clé de modèle la plus récente de l'organisation pour ce fournisseur. */
@@ -598,7 +649,7 @@ export function deleteOrgCascade(orgId: string) {
   try {
     db.prepare("delete from messages where conversation_id in (select id from conversations where org_id = ?)").run(orgId);
     db.prepare("delete from events where task_id in (select id from tasks where org_id = ?)").run(orgId);
-    for (const t of ["conversations", "tasks", "proxy_calls", "audit_log", "invitations", "knowledge", "projects", "secrets", "memberships"]) db.prepare(`delete from ${t} where org_id = ?`).run(orgId);
+    for (const t of ["expenses", "conversations", "tasks", "proxy_calls", "audit_log", "invitations", "knowledge", "projects", "secrets", "memberships"]) db.prepare(`delete from ${t} where org_id = ?`).run(orgId);
     db.prepare("delete from orgs where id = ?").run(orgId);
     db.exec("commit");
   } catch (e) { db.exec("rollback"); throw e; }

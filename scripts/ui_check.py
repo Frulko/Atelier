@@ -59,6 +59,7 @@ with sync_playwright() as p:
     watch(admin)
 
     # ---------------------------------------------------------------- sign in
+    print('UI: sign in', flush=True)
     resp = admin.goto(BASE)
     expect(admin).to_have_url(f"{BASE}/login")           # not signed in: sent to the login page
     csp = resp.headers.get("content-security-policy", "") if resp else ""
@@ -73,12 +74,14 @@ with sync_playwright() as p:
     OBASE = f"{BASE}/o/{ORG}"
 
     # --------------------------------------------------------------- overview
+    print('UI: overview', flush=True)
     expect(admin.get_by_role("heading", level=1)).to_be_visible()
     expect(admin.get_by_text("Taux de réussite")).to_be_visible()
     expect(admin.get_by_role("navigation", name="Navigation principale").get_by_role("link", name="Journal d'audit")).to_be_visible()
     shot(admin, "02-overview")
 
     # ------------------------------------------------------------ a task, end to end (fake agent)
+    print('UI: a task, end to end (fake agent)', flush=True)
     nav(admin, "Tâches")
     admin.get_by_role("button", name="Nouvelle tâche").first.click()
     dlg = admin.get_by_role("dialog")
@@ -115,6 +118,7 @@ with sync_playwright() as p:
     expect(admin).to_have_url(f"{OBASE}/tasks")
 
     # --------------------------------------------------------------- projects
+    print('UI: projects', flush=True)
     nav(admin, "Projets")
     expect(admin.get_by_role("heading", name="Todo API (Node)")).to_be_visible()
     shot(admin, "05-projects")
@@ -128,10 +132,11 @@ with sync_playwright() as p:
         expect(side).to_be_visible()                                                # the menu stays where we go
         expect(crumbs).to_contain_text(label)
     # ----------------------------------------------------------------- the project's AI configuration
+    print("UI: the project's AI configuration", flush=True)
     side.get_by_role("link", name=re.compile("^IA")).click()
     expect(admin.get_by_text("Ce que l'agent reçoit à chaque tâche")).to_be_visible()
     admin.get_by_label("Instructions du projet").fill("Signe chaque page « Le Fournil ».")
-    admin.get_by_role("button", name="Enregistrer").first.click()
+    admin.get_by_role("button", name="Enregistrer", exact=True).first.click()
     expect(admin.get_by_text("Instructions enregistrées.")).to_be_visible()
     expect(admin.get_by_text("Absent").first).to_be_visible(timeout=30000)             # CLAUDE.md is read from the repository: absent here
     admin.get_by_role("button", name="Créer depuis un modèle").first.click()        # opens the editor with a starter CLAUDE.md
@@ -142,6 +147,12 @@ with sync_playwright() as p:
     admin.get_by_role("button", name=re.compile("Abandonner|Confirmer")).click()
     expect(admin.get_by_role("heading", level=1, name="Todo API (Node)")).to_be_visible()
     side.get_by_role("link", name=re.compile("^IA")).click()
+    daily_field=admin.get_by_label("Budget journalier du projet ($)", exact=True)
+    daily_field.fill("5")
+    admin.get_by_label("Fuseau du budget", exact=True).fill("Europe/Paris")
+    daily_field.locator("xpath=ancestor::form").get_by_role("button",name="Enregistrer",exact=True).click()
+    expect(daily_field.locator("xpath=ancestor::form").get_by_role("button",name="Enregistrer",exact=True)).to_be_disabled()
+    expect(daily_field).to_have_value("5")
     shot(admin, "05h-ai")
 
     side.get_by_role("link", name=re.compile("^Conversations")).click()             # opening a conversation keeps the project context
@@ -162,6 +173,7 @@ with sync_playwright() as p:
     admin.get_by_role("button", name="Vérifier l'accès").click()
     expect(admin.get_by_text("Tout répond")).to_be_visible()                    # git ls-remote worked
     # ------------------------------------------------------------ the embedded editor (Monaco)
+    print('UI: the embedded editor (Monaco)', flush=True)
     side.get_by_role("link", name="Éditeur").click()
     tree = admin.get_by_role("list", name="Arbre des fichiers")
     expect(tree.get_by_text("server.js")).to_be_visible(timeout=60000)               # a private workspace was cloned
@@ -195,7 +207,7 @@ with sync_playwright() as p:
     admin.get_by_role("button", name="Modifier").click()                         # give the project a site address to watch
     dlg = admin.get_by_role("dialog")
     dlg.get_by_label("Adresse du site").fill("http://127.0.0.1:8080/healthz")   # seen from INSIDE the container
-    dlg.get_by_role("button", name="Enregistrer").click()
+    dlg.get_by_role("button", name="Enregistrer", exact=True).click()
     expect(admin.get_by_role("dialog")).to_have_count(0)
     nav(admin, "Vue d'ensemble")                                                 # dashboard: health, last commit, refresh
     card = admin.get_by_test_id("project-status-todo-api")
@@ -218,19 +230,21 @@ with sync_playwright() as p:
     expect(admin.get_by_role("heading", name=f"Projet UI {RUN}")).to_have_count(0)
 
     # ----------------------------------------------------------- integrations
+    print('UI: integrations', flush=True)
     nav(admin, "Intégrations")
     admin.get_by_role("button", name="Ajouter un secret").click()
     dlg = admin.get_by_role("dialog")
     dlg.get_by_label("Type").select_option("provider_key")
     dlg.get_by_label("Libellé").fill(f"ui-key-{RUN}")
     dlg.get_by_label("Valeur").fill(SECRET_VALUE)
-    dlg.get_by_role("button", name="Enregistrer").click()
+    dlg.get_by_role("button", name="Enregistrer", exact=True).click()
     expect(admin.get_by_text(f"ui-key-{RUN}").first).to_be_visible()
     expect(admin.get_by_text(SECRET_VALUE[-4:]).first).to_be_visible()                     # only the hint
     assert SECRET_VALUE not in admin.content(), "the secret value is visible in the page"
     shot(admin, "06-integrations")
 
     # -------------------------------------------------------------- knowledge
+    print('UI: knowledge', flush=True)
     nav(admin, "Connaissances")
     admin.get_by_role("button", name="Nouvelle connaissance").first.click()
     dlg = admin.get_by_role("dialog")
@@ -242,7 +256,7 @@ with sync_playwright() as p:
     expect(dlg.get_by_label("Contenu")).to_have_value(re.compile("Ton chaleureux"))
     dlg.get_by_role("tab", name="Aperçu").click()
     expect(dlg.get_by_text("Ton et couleurs")).to_be_visible()                              # markdown preview
-    dlg.get_by_role("button", name="Enregistrer").click()
+    dlg.get_by_role("button", name="Enregistrer", exact=True).click()
     item = admin.get_by_role("listitem").filter(has_text=f"charte-{RUN}")
     expect(item).to_be_visible()
     admin.get_by_label("Une demande ou une question").fill("quelle charte pour la page Contact ?")
@@ -250,6 +264,7 @@ with sync_playwright() as p:
     expect(admin.get_by_test_id("knowledge-preview")).to_contain_text("1 connaissance donnée")  # what the assistant would know
     shot(admin, "05b-knowledge")
     # ---------------------------------------------------------- conversations
+    print('UI: conversations', flush=True)
     nav(admin, "Conversations")
     admin.get_by_role("button", name="Nouvelle conversation").first.click()
     dlg = admin.get_by_role("dialog")
@@ -293,6 +308,7 @@ with sync_playwright() as p:
     os.unlink(charte)
 
     # ------------------------------------------------------------ guide, first steps and the welcome tour
+    print('UI: guide, first steps and the welcome tour', flush=True)
     nav(admin, "Guide")
     expect(admin.get_by_role("heading", level=1, name="Guide")).to_be_visible()
     steps = admin.get_by_test_id("first-steps")
@@ -334,6 +350,7 @@ with sync_playwright() as p:
     fresh.close()
 
     # ------------------------------------------------------------------- team
+    print('UI: team', flush=True)
     nav(admin, "Équipe")
     admin.get_by_role("button", name="Inviter").first.click()
     dlg = admin.get_by_role("dialog")
@@ -378,10 +395,11 @@ with sync_playwright() as p:
     expect(admin.get_by_role("row").filter(has_text=INVITEE)).to_have_count(0)
 
     # ------------------------------------------------------------------ usage
+    print('UI: usage', flush=True)
     nav(admin, "Usage")
     expect(admin.get_by_text("Budget du mois en cours")).to_be_visible()
     admin.get_by_label("Plafond mensuel (en $)").fill("50")
-    admin.get_by_role("button", name="Enregistrer").click()
+    admin.get_by_role("button", name="Enregistrer", exact=True).click()
     expect(admin.get_by_text("/ 50,00 $")).to_be_visible()
     expect(admin.get_by_test_id("chat-usage")).to_contain_text("Réponses")                  # chat usage, in tokens
     expect(admin.get_by_test_id("chat-usage")).not_to_contain_text("0 Tokens lus")
@@ -390,6 +408,7 @@ with sync_playwright() as p:
     expect(admin.get_by_text("Aucun plafond")).to_be_visible()
 
     # ------------------------------------------------------------------ audit
+    print('UI: audit', flush=True)
     nav(admin, "Journal d'audit")
     expect(admin.get_by_text(f"a ajouté le secret « ui-key-{RUN} »")).to_be_visible()
     expect(admin.get_by_text(f"a invité {INVITEE}")).to_be_visible()
@@ -404,6 +423,7 @@ with sync_playwright() as p:
     assert "secret.create" in csv.text() and SECRET_VALUE not in csv.text(), "CSV export is wrong or leaks a secret"
 
     # ----------------------------------------------------------- organization
+    print('UI: organization', flush=True)
     nav(admin, "Organisation")
     admin.get_by_label("Modèle", exact=True).fill("modele-de-test-1")                      # the assistant's model, per organization
     admin.get_by_role("button", name="Appliquer").click()
@@ -413,23 +433,62 @@ with sync_playwright() as p:
     name_box = admin.get_by_label("Nom de l'organisation")
     original = name_box.input_value()
     name_box.fill(f"{original} bis")
-    admin.get_by_role("button", name="Enregistrer").click()
+    admin.get_by_role("button", name="Enregistrer", exact=True).click()
     expect(admin.get_by_text("Nom enregistré.")).to_be_visible()
     expect(admin.get_by_text(f"{original} bis").first).to_be_visible()
     name_box.fill(original)
-    admin.get_by_role("button", name="Enregistrer").click()
-    expect(admin.get_by_role("button", name="Enregistrer")).to_be_disabled()
+    admin.get_by_role("button", name="Enregistrer", exact=True).click()
+    expect(admin.get_by_role("button", name="Enregistrer", exact=True)).to_be_disabled()
     admin.get_by_role("button", name="Supprimer…").click()                                    # deleting needs the exact name
     expect(admin.get_by_role("button", name="Supprimer définitivement")).to_be_disabled()
     admin.get_by_role("dialog").get_by_role("button", name="Annuler").click()
 
+    nav(admin, "Organisation")
+    admin.get_by_label("Modèle des agents", exact=True).fill("haiku")
+    admin.get_by_label("Modèle des sous-agents", exact=True).fill("haiku")
+    admin.get_by_label("Plafond mensuel de l'organisation ($)", exact=True).fill("200")
+    admin.get_by_role("button", name="Enregistrer les limites", exact=True).click()
+    expect(admin.get_by_role("button", name="Enregistrer les limites", exact=True)).to_be_disabled()
+    expect(admin.get_by_role("heading", name="Décisions du technicien", exact=True)).to_be_visible()
+    expect(admin.get_by_label("Canal du technicien")).to_have_value("telegram")
+    admin.get_by_label("Canal du technicien").select_option("discord")
+    expect(admin.get_by_label("Identifiant du salon Discord")).to_be_visible()
+    shot(admin, "10b-governance")
+    # No bot credentials are entered: browser tests never send real chat messages.
+
+    # ---------------------------------------------------------- background agents and publications
+    print('UI: background agents and publications', flush=True)
+    nav(admin, "Agents")
+    expect(admin.get_by_role("heading", name="Agents", exact=True)).to_be_visible()
+    admin.get_by_role("button", name="Nouvel agent").click()
+    agent_dlg = admin.get_by_role("dialog")
+    agent_dlg.get_by_label("Nom de l'agent").fill(f"Gardien UI {RUN}")
+    agent_dlg.get_by_label("Projet", exact=True).select_option(label="Mini Régie (calculs)")
+    agent_dlg.get_by_label("Mission", exact=True).fill("Vérifie les calculs sans changer les prix.")
+    agent_dlg.get_by_role("button", name="Créer l'agent").click()
+    expect(admin.get_by_role("heading", name=f"Gardien UI {RUN}", exact=True)).to_be_visible()
+    shot(admin, "12a-agents")
+    admin.get_by_role("button", name=re.compile("Notifications")).click()
+    notice_dlg = admin.get_by_role("dialog")
+    expect(notice_dlg.get_by_role("heading", name="Notifications", exact=True)).to_be_visible()
+    notice_dlg.get_by_role("button", name="Fermer", exact=True).click()
+    nav(admin, "Projets")
+    admin.get_by_role("link", name=re.compile("Publication smoke")).click()
+    admin.get_by_role("navigation", name="Menu du projet").get_by_role("link", name="Publications", exact=True).click()
+    expect(admin.get_by_role("heading", name="Publications", exact=True)).to_be_visible()
+    expect(admin.get_by_title("Aperçu de l'application")).to_be_visible()
+    expect(admin.frame_locator('iframe[title="Aperçu de l\'application"]').get_by_role("heading", name="Une idée, puis une application.")).to_be_visible()
+    shot(admin, "12b-publications")
+
     # ---------------------------------------------------------------- account
+    print('UI: account', flush=True)
     admin.get_by_role("link").filter(has_text=EMAIL).first.click()
     expect(admin.get_by_role("heading", name="Mon compte")).to_be_visible()
     admin.get_by_label("Nom affiché").fill("Admin Test")
-    admin.get_by_role("button", name="Enregistrer").click()
+    admin.get_by_role("button", name="Enregistrer", exact=True).click()
     expect(admin.get_by_text("Profil enregistré.")).to_be_visible()
     expect(admin.get_by_text("Admin Test").first).to_be_visible()
+    expect(admin.get_by_role("heading",name="Connexion SSO",exact=True)).to_be_visible()
     expect(admin.get_by_text("Cet appareil")).to_be_visible()                                  # the sessions list shows this browser
     admin.get_by_role("tab", name="Sombre").click()
     expect(admin.locator("html")).to_have_attribute("data-theme", "dark")
@@ -437,10 +496,11 @@ with sync_playwright() as p:
     admin.get_by_role("tab", name="Système").click()
     expect(admin.locator("html")).not_to_have_attribute("data-theme", "dark")
     admin.get_by_label("Nom affiché").fill("")
-    admin.get_by_role("button", name="Enregistrer").click()
+    admin.get_by_role("button", name="Enregistrer", exact=True).click()
     expect(admin.get_by_text("Profil enregistré.").first).to_be_visible()
 
     # ----------------------------------------------------------------- mobile
+    print('UI: mobile', flush=True)
     phone = quiet(browser.new_context(viewport={"width": 390, "height": 800})).new_page()
     watch(phone)
     phone.goto(f"{BASE}/login")
@@ -456,6 +516,7 @@ with sync_playwright() as p:
     assert phone.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1"), "horizontal scroll on a phone"
 
     # ----------------------------------------------------------------- sign out
+    print('UI: sign out', flush=True)
     admin.get_by_role("button", name="Se déconnecter").click()
     expect(admin).to_have_url(f"{BASE}/login")
     admin.goto(f"{OBASE}/tasks")                                                               # signed out: a deep link asks to sign in

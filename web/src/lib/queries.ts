@@ -1,7 +1,7 @@
 import { QueryClient, queryOptions, keepPreviousData } from "@tanstack/react-query";
 import { api, ApiError, qs } from "./api";
 import type {
-  ConversationDetail, ConversationPage, ProjectStatus, KnowledgeBrief, KnowledgeItem,
+  Automation, AppNotification, Release, Runtime, ConversationDetail, ConversationPage, ProjectStatus, KnowledgeBrief, KnowledgeItem,
   Activity, AuditFilters, AuditPage, Invitation, Me, Member, OrgDetail, Project, Secret, Session, Stats, Task, TaskFilters, TaskPage, Usage,
 } from "./types";
 import { isActive } from "./labels";
@@ -80,3 +80,9 @@ export const conversationQuery = (o: string, id: string) => queryOptions({
 
 /** Santé, dernier commit et déploiement de chaque projet. Le serveur contrôle en tâche de fond ; la page se met à jour chaque minute. */
 export const statusQuery = (o: string) => queryOptions({ queryKey: ["org", o, "status"], queryFn: () => api.get<ProjectStatus[]>(`${org(o)}/status`), refetchInterval: 60_000 });
+
+export const automationsQuery = (o: string) => queryOptions({ queryKey: ["org", o, "automations"], queryFn: () => api.get<Automation[]>(`${org(o)}/automations`), refetchInterval: 15_000 });
+export const notificationsQuery = queryOptions({ queryKey: ["me", "notifications"], queryFn: () => api.get<AppNotification[]>("/api/me/notifications"), refetchInterval: 15_000 });
+export const releasesQuery = (o: string, p: string) => queryOptions({ queryKey: ["org", o, "releases", p], queryFn: () => api.get<Release[]>(`${org(o)}/projects/${p}/releases`), refetchInterval: 4000 });
+export const runtimeQuery = (o: string, p: string) => queryOptions({ queryKey: ["org", o, "runtime", p], queryFn: () => api.get<{runtime: Runtime | null; appsDomain: string | null; productionUrl: string | null}>(`${org(o)}/projects/${p}/runtime`) });
+export const environmentQuery = (o: string, p: string) => queryOptions({ queryKey: ["org", o, "environment", p], queryFn: () => api.get<{environment: string; name: string}[]>(`${org(o)}/projects/${p}/environment`) });

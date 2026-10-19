@@ -2,6 +2,9 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import clsx from "clsx";
 import { BarChart3, BookOpen, CircleHelp, FolderGit2, MessagesSquare, LayoutDashboard, ListChecks, LogOut, Menu, Plug, ScrollText, Settings, Users, X, type LucideIcon } from "lucide-react";
+import { Notifications } from "../../features/notifications/Notifications";
+import { disablePush } from "../../features/notifications/push";
+import { Bot } from "lucide-react";
 import { useState } from "react";
 import { api } from "../../lib/api";
 import { meQuery } from "../../lib/queries";
@@ -17,6 +20,7 @@ const ITEMS: Item[] = [
   { to: "/o/$orgId", label: "Vue d'ensemble", icon: LayoutDashboard, exact: true },
   { to: "/o/$orgId/conversations", label: "Conversations", icon: MessagesSquare, tour: "nav-conversations" },
   { to: "/o/$orgId/tasks", label: "Tâches", icon: ListChecks, tour: "nav-tasks" },
+  { to: "/o/$orgId/automations", label: "Agents", icon: Bot, admin: true },
   { to: "/o/$orgId/projects", label: "Projets", icon: FolderGit2, tour: "nav-projects" },
   { to: "/o/$orgId/knowledge", label: "Connaissances", icon: BookOpen, tour: "nav-knowledge" },
   { to: "/o/$orgId/team", label: "Équipe", icon: Users, admin: true },
@@ -48,7 +52,7 @@ function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const logout = useMutation({
-    mutationFn: () => api.post("/api/auth/logout"),
+    mutationFn: async () => { await disablePush(); return api.post("/api/auth/logout"); },
     onSettled: async () => { qc.clear(); await qc.invalidateQueries({ queryKey: meQuery.queryKey }); navigate({ to: "/login" }); },
   });
   return (
@@ -94,6 +98,7 @@ export function AppShell() {
           <button type="button" onClick={() => setMenu(true)} aria-label="Ouvrir le menu" className="rounded-md p-1.5 text-ink hover:bg-line/60 lg:hidden"><Menu className="size-5" /></button>
           <Logo className="size-7 lg:hidden" />
           <Breadcrumbs />
+          <Notifications />
         </header>
         <main className="min-w-0 px-5 py-8 sm:px-8 lg:px-12 lg:py-10"><div className={clsx("mx-auto", wide ? "max-w-none" : "max-w-[72rem] min-[1700px]:max-w-[88rem] min-[2200px]:max-w-[104rem]")}><Outlet /></div></main>
       </div>

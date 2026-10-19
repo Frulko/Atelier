@@ -27,7 +27,7 @@ A teammate writes *"add a volume discount to the Travel tab"*. An AI agent edits
 
 - **The agent never holds a power it could abuse.** Git tokens, model API keys, pushing and merging all live in the orchestrator — plain code the agent cannot change.
 - **The sandbox is disposable and blind.** One container per task, no secret, no Internet; its only way out is a proxy that adds the real API key.
-- **Nothing ships without a human.** The agent only ever produces a merge/pull request.
+- **The orchestrator controls publication.** Projects choose manual, approved or automatic delivery; protected changes and production secrets require human review.
 - **Teams are isolated.** Organizations, roles, per-organization encrypted secrets and projects.
 
 ## What you can do
@@ -36,10 +36,15 @@ A teammate writes *"add a volume discount to the Travel tab"*. An AI agent edits
 - **Run a task**: the agent changes the code in a sandbox. A task is also a conversation — ask for adjustments and it updates the same branch and merge request.
 - **See where each project stands**: site health, last commit, deployment, latest task — in a project space with its own menu and breadcrumb.
 - **Configure the AI per project**: team instructions, agent settings (model, turns, budget), and the repository's `CLAUDE.md`, `AGENTS.md`, rules and skills — created from templates in the editor, or written by the agent.
+- **Create from an idea**: start an HTML, React or Node.js project with a managed repository; the Node starter includes accounts, SQLite and private file storage.
+- **Preview and publish on Docker / Portainer**: build a version, inspect desktop/mobile screenshots, publish its artifact and restore a previous publication. Previews require an authorized session.
+- **Delegate background work**: server-side tasks survive a closed browser; queued tasks reload after restart. Schedule agents with cron/timezones or let a bounded autonomous mission continue its proposal. Results arrive in a private inbox and optional Web Push.
 - **Edit by hand when you prefer**: an in-browser editor (Monaco) on a private copy; it commits to a branch under the same review rules, and can polish an agent's proposal.
 - **Be taken by the hand**: a welcome tour, a guide and a guided first use case (a bakery that wants a contact page).
 
 ## Quick start
+
+**GitLab auto-hébergé + Portainer :** [note de déploiement](docs/note-deploiement.md) et [tutoriel de mise en ligne et CI/CD](docs/gitlab-portainer.md), avec registre privé, HTTPS, Keycloak, sauvegardes et mises à jour.
 
 You need Docker. No API key and no Git server are required to try it: a deterministic fake agent and three fake projects stand in for both.
 
@@ -66,7 +71,8 @@ To run it for real (your own projects, a real model, a real forge), see **[Deplo
 | Conversations: a streaming assistant (Vercel AI SDK, per-organization provider and model, set in the UI) with file attachments, a knowledge base, tasks as conversations with follow-up turns on the same branch | ✅ working, tested with a fake model and a fake local provider (no real provider call yet) |
 | Dashboard health and git status, welcome tour, guide and guided first steps | ✅ working, driven in a real browser (forge deployments not exercised against a real forge) |
 | Embedded code editor (Monaco): private workspaces, autosaved drafts, diff, sandboxed check, commit and push, edit an agent's branch | ✅ working, driven in a real browser ([design](docs/editor-design.md)) |
-| SSO (OIDC, GitLab / GitHub sign-in), real-agent validation, previews | 🚧 next ([roadmap](docs/roadmap.md)) |
+| Managed templates, Docker previews/publication/rollback, Chromium screenshots, scheduled/autonomous agents, inbox and Web Push | Implemented; Docker/local-provider validation, no real model or push-provider validation yet |
+| SSO (OIDC, GitLab / GitHub sign-in), real-agent validation | 🚧 next ([roadmap](docs/roadmap.md)) |
 
 Read **[Security → known limitations](docs/security.md#known-limitations)** before exposing it to anyone.
 
@@ -90,3 +96,7 @@ Contributing with an AI assistant or by hand? Start with **[CLAUDE.md](CLAUDE.md
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+### Budgets, technician decisions and Keycloak
+
+Projects support a daily budget in their timezone, reservations for active work and per-call Claude cost checks. Agents and subagents have model defaults separate from the discussion assistant. When the daily limit is reached, a technician can grant 1 USD for today or wait until tomorrow, under the monthly organization ceiling. Technical questions suspend and save work, with decisions available inside Atelier and optionally through Telegram/Discord bots. Keycloak OIDC can be enabled alongside passwords, with explicit identity linking and the existing administrator roles. See [setup and boundaries](docs/deployment.md#project-daily-budgets-and-model-selection).

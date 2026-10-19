@@ -1,7 +1,8 @@
 import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, rm, appendFile } from "node:fs/promises";
 import { join } from "node:path";
+import { repositoryAddresses, forgeFetch } from "./security.ts";
 import { cfg, type Project } from "./config.ts";
 
 const run = promisify(execFile);
@@ -26,25 +27,41 @@ function gitEnv(token: string, forge: Project["forge"] = "gitlab"): NodeJS.Proce
     ["safe.directory", "*"],
     ["core.hooksPath", "/dev/null"],
     ["core.fsmonitor", "false"],
+    ["http.followRedirects", "false"],
+    ["http.sslVerify", "true"],
+    ["credential.helper", ""],
   ];
   if (token) {
     pairs.push(["http.extraHeader", `Authorization: Basic ${Buffer.from(`${forge === "github" ? "x-access-token" : "oauth2"}:${token}`).toString("base64")}`]);
   }
-  const e: NodeJS.ProcessEnv = { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_COUNT: String(pairs.length) };
+  const e: NodeJS.ProcessEnv = { PATH: process.env.PATH, HOME: process.env.HOME, GIT_TERMINAL_PROMPT: "0", GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_COUNT: String(pairs.length) };
   pairs.forEach(([k, v], i) => { e[`GIT_CONFIG_KEY_${i}`] = k; e[`GIT_CONFIG_VALUE_${i}`] = v; });
   return e;
 }
 
-const git = async (ws: Workspace, args: string[], token = "", forge: Project["forge"] = "gitlab") =>
-  (await run("git", ["--git-dir", ws.gitdir, "--work-tree", ws.tree, ...args], { env: gitEnv(token, forge), maxBuffer: 20e6 })).stdout.trim();
+async function repositoryEnv(p: Project): Promise<NodeJS.ProcessEnv> {
+  const env=gitEnv(p.token,p.forge);
+  if(p.repo.startsWith("/"))return env;
+  const {url,addresses}=await repositoryAddresses(p.repo);
+  const index=Number(env.GIT_CONFIG_COUNT);
+  env[`GIT_CONFIG_KEY_${index}`]="http.curloptResolve";
+  env[`GIT_CONFIG_VALUE_${index}`]=`${url.hostname}:${url.port||443}:${addresses.map(a=>a.family===6?`[${a.address}]`:a.address).join(",")}`;
+  env.GIT_CONFIG_COUNT=String(index+1);
+  return env;
+}
+
+const git = async (ws: Workspace, args: string[], token = "", forge: Project["forge"] = "gitlab", repo?: string) =>
+  (await run("git", ["--git-dir", ws.gitdir, "--work-tree", ws.tree, ...args], { env: repo ? await repositoryEnv({repo,token,forge} as Project) : gitEnv(token, forge), timeout:120_000, maxBuffer: 20e6 })).stdout;
 
 /** `existing` : un ajustement repart de la branche déjà envoyée de la tâche (la proposition ouverte se met alors à jour), pas de la branche de base. */
 export async function clone(p: Project, taskId: string, branch: string, existing = false): Promise<Workspace> {
   const ws = workspace(taskId);
   await mkdir(ws.root, { recursive: true });
-  await run("git", ["clone", "--quiet", "--separate-git-dir", ws.gitdir, "--branch", existing ? branch : p.branch, p.repo, ws.tree], { env: gitEnv(p.token, p.forge) });
+  await run("git", ["clone", "--quiet", "--separate-git-dir", ws.gitdir, "--branch", existing ? branch : p.branch, p.repo, ws.tree], { env: await repositoryEnv(p), timeout: 120_000, maxBuffer: 5e6 });
   await rm(join(ws.tree, ".git"), { force: true }); // l'agent ne voit pas le git
   if (!existing) await git(ws, ["checkout", "--quiet", "-b", branch]);
+  await mkdir(join(ws.gitdir, "info"), { recursive: true });
+  await appendFile(join(ws.gitdir, "info", "exclude"), "\nnode_modules/\n.atelier-context/\n");
   // uid 1000 = utilisateur "node" du bac à sable
   if (process.getuid?.() === 0) await run("chown", ["-R", "1000:1000", ws.tree]); // sans les droits root (tests, poste de dev) il n'y a rien à changer
   return ws;
@@ -54,13 +71,13 @@ export async function clone(p: Project, taskId: string, branch: string, existing
 export async function changedFiles(ws: Workspace): Promise<string[]> {
   await rm(join(ws.tree, ".git"), { recursive: true, force: true }); // au cas où l'agent en aurait créé un
   await git(ws, ["add", "-A"]);
-  const out = await git(ws, ["diff", "--cached", "--name-only"]);
-  return out ? out.split("\n") : [];
+  const out = await git(ws, ["diff", "--cached", "--no-renames", "--name-only", "-z"]);
+  return out ? out.split("\0").filter(Boolean) : [];
 }
 
 export async function commitAndPush(p: Project, ws: Workspace, branch: string, message: string) {
   await git(ws, ["-c", `user.name=${cfg.gitAuthorName}`, "-c", `user.email=${cfg.gitAuthorEmail}`, "commit", "--quiet", "-m", message]);
-  await git(ws, ["push", "--quiet", "origin", branch], p.token, p.forge);
+  await git(ws, ["push", "--quiet", "origin", branch], p.token, p.forge, p.repo);
 }
 
 /** Ouvre la MR (GitLab, y compris auto-hébergé) ou la PR (GitHub, y compris Enterprise). Rend son URL. */
@@ -72,21 +89,23 @@ export async function openMergeRequest(p: Project, branch: string, title: string
 
   if (p.forge === "github") {
     const api = u.hostname === "github.com" ? "https://api.github.com" : `${u.origin}/api/v3`;
-    const r = await fetch(`${api}/repos/${path}/pulls`, {
+    const r = await forgeFetch(`${api}/repos/${path}/pulls`, {
       method: "POST",
       headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json", "user-agent": "atelier", "content-type": "application/json" },
       body: JSON.stringify({ title, head: branch, base: p.branch, body: description }),
+      signal: AbortSignal.timeout(20_000),
     });
-    if (!r.ok) throw new Error(`GitHub ${r.status}: ${(await r.text()).slice(0, 300)}`);
+    if (!r.ok) throw new Error(`GitHub ${r.status} : ouverture de proposition refusée.`);
     return ((await r.json()) as { html_url: string }).html_url;
   }
 
-  const r = await fetch(`${u.origin}/api/v4/projects/${encodeURIComponent(path)}/merge_requests`, {
+  const r = await forgeFetch(`${u.origin}/api/v4/projects/${encodeURIComponent(path)}/merge_requests`, {
     method: "POST",
     headers: { "PRIVATE-TOKEN": token, "Content-Type": "application/json" },
     body: JSON.stringify({ source_branch: branch, target_branch: p.branch, title, description, remove_source_branch: true }),
+    signal: AbortSignal.timeout(20_000),
   });
-  if (!r.ok) throw new Error(`GitLab ${r.status}: ${(await r.text()).slice(0, 300)}`);
+  if (!r.ok) throw new Error(`GitLab ${r.status} : ouverture de proposition refusée.`);
   return ((await r.json()) as { web_url: string }).web_url;
 }
 
@@ -105,7 +124,7 @@ export type AccessCheck = { ok: boolean; branchFound: boolean; error?: "auth" | 
 export async function verifyAccess(p: Project): Promise<AccessCheck> {
   const t0 = Date.now();
   try {
-    const { stdout } = await run("git", ["ls-remote", "--heads", "--", p.repo, `refs/heads/${p.branch}`], { env: gitEnv(p.token, p.forge), timeout: 20_000, maxBuffer: 1e6 });
+    const { stdout } = await run("git", ["ls-remote", "--heads", "--", p.repo, `refs/heads/${p.branch}`], { env: await repositoryEnv(p), timeout: 20_000, maxBuffer: 1e6 });
     return { ok: true, branchFound: stdout.includes(`refs/heads/${p.branch}`), ms: Date.now() - t0 };
   } catch (e: any) {
     const text = scrub(String(e.stderr || e.message || ""), [p.token]).slice(0, 300);
@@ -126,7 +145,7 @@ export type LatestCommit = { sha: string; subject: string; author: string; at: n
 async function fetchBase(p: Project, id: string): Promise<(args: string[]) => Promise<string>> {
   const dir = join(cfg.workDir, "_status", `${id}.git`);
   await mkdir(dir, { recursive: true });
-  const env = gitEnv(p.token, p.forge);
+  const env = await repositoryEnv(p);
   const g = (args: string[]) => run("git", ["--git-dir", dir, ...args], { env, timeout: 30_000, maxBuffer: 2e6 }).then((r) => r.stdout);
   await g(["rev-parse", "--git-dir"]).catch(() => g(["init", "--bare", "--quiet"]));
   await g(["fetch", "--quiet", "--depth", "1", "--no-tags", "--", p.repo, `+refs/heads/${p.branch}:refs/heads/base`]);
@@ -171,7 +190,7 @@ export async function latestDeployment(p: Project): Promise<LatestDeploy | null>
   const u = new URL(p.repo);
   const path = u.pathname.replace(/^\/|\.git$/g, "");
   const get = async (url: string, headers: Record<string, string>) => {
-    const r = await fetch(url, { headers: { "user-agent": "atelier", ...headers }, signal: AbortSignal.timeout(10_000) });
+    const r = await forgeFetch(url, { headers: { "user-agent": "atelier", ...headers }, signal: AbortSignal.timeout(10_000) });
     if (!r.ok) throw new Error(`${p.forge === "github" ? "GitHub" : "GitLab"} ${r.status}`);
     return r.json() as Promise<any>;
   };
@@ -219,7 +238,7 @@ export async function commitAs(ws: Workspace, message: string, author: { name: s
 
 /** Envoie la branche. Un refus parce que la branche a avancé ailleurs est dit clairement (jamais de force). */
 export async function pushBranch(p: Project, ws: Workspace, branch: string): Promise<void> {
-  try { await git(ws, ["push", "--quiet", "origin", branch], p.token, p.forge); }
+  try { await git(ws, ["push", "--quiet", "origin", branch], p.token, p.forge, p.repo); }
   catch (e: any) {
     const text = scrub(String(e.stderr || e.message || ""), [p.token]);
     if (/non-fast-forward|fetch first|rejected|stale info/i.test(text)) throw Object.assign(new Error("la branche a changé sur le dépôt depuis l'ouverture de l'éditeur : abandonne cette édition et rouvre-la"), { code: "NOT_FAST_FORWARD" });
@@ -236,4 +255,68 @@ export function trustLocalRepos() {
   if (!cfg.allowLocalRepos) return;
   const has = (() => { try { return execFileSync("git", ["config", "--global", "--get-all", "safe.directory"], { encoding: "utf8" }).split("\n").includes("*"); } catch { return false; } })();
   if (!has) execFileSync("git", ["config", "--global", "--add", "safe.directory", "*"]);
+}
+
+export const revision = async (ws: Workspace) => (await git(ws, ["rev-parse", "HEAD"])).trim();
+
+export async function createManagedRepo(id: string, files: Record<string, string>) {
+  const { writeFile } = await import("node:fs/promises");
+  const { dirname } = await import("node:path");
+  const repo = join(cfg.workDir, "_repos", `${id}.git`);
+  const ws = workspace(`seed-${id}`);
+  await mkdir(dirname(repo), { recursive: true });
+  await mkdir(ws.tree, { recursive: true });
+  try {
+    await run("git", ["init", "--quiet", "--bare", "--initial-branch=main", repo], { env: gitEnv("") });
+    await run("git", ["init", "--quiet", "--initial-branch=main", "--separate-git-dir", ws.gitdir, ws.tree], { env: gitEnv("") });
+    await rm(join(ws.tree, ".git"), { force: true });
+    for (const [path, content] of Object.entries(files)) {
+      await mkdir(dirname(join(ws.tree, path)), { recursive: true });
+      await writeFile(join(ws.tree, path), content);
+    }
+    await git(ws, ["add", "-A"]);
+    await git(ws, ["-c", `user.name=${cfg.gitAuthorName}`, "-c", `user.email=${cfg.gitAuthorEmail}`, "commit", "--quiet", "-m", "Initial project"]);
+    await git(ws, ["remote", "add", "origin", repo]);
+    await git(ws, ["push", "--quiet", "origin", "main"]);
+  } catch (e) { await rm(repo, { recursive: true, force: true }); throw e; }
+  finally { await cleanup(`seed-${id}`); }
+}
+
+/** Complete an already pushed proposal without rerunning an agent. */
+export async function retryProposal(p: Project, task: { branch: string | null; prompt: string; flagged: number; files_json: string | null; cost: number }) {
+  if (!task.branch) throw new Error("Aucune branche à reprendre.");
+  const title = `${task.flagged ? "[REVUE REQUISE] " : ""}atelier : ${task.prompt.split("\n")[0]!.slice(0, 70)}`;
+  // The previous response may have been lost after creation. Find the existing PR before creating another.
+  if (p.forge !== "none") {
+    const u = new URL(p.repo), path = u.pathname.replace(/^\/|\.git$/g, "");
+    const gh = p.forge === "github", api = gh ? u.hostname === "github.com" ? "https://api.github.com" : `${u.origin}/api/v3` : `${u.origin}/api/v4`;
+    const endpoint = gh ? `${api}/repos/${path}/pulls?state=open&head=${encodeURIComponent(path.split("/")[0] + ":" + task.branch)}` : `${api}/projects/${encodeURIComponent(path)}/merge_requests?state=opened&source_branch=${encodeURIComponent(task.branch)}`;
+    const headers: Record<string, string> = gh ? { authorization: `Bearer ${p.token}`, "user-agent": "atelier" } : { "PRIVATE-TOKEN": p.token };
+    const response = await forgeFetch(endpoint, { headers, signal: AbortSignal.timeout(20_000) });
+    if (!response.ok) throw new Error("Impossible de retrouver la proposition sur la forge.");
+    const rows = await response.json() as { html_url?: string; web_url?: string }[];
+    if (rows[0]) return rows[0].html_url ?? rows[0].web_url ?? null;
+  }
+  return openMergeRequest(p, task.branch, title, `Demande : ${task.prompt}\n\nFichiers : ${JSON.parse(task.files_json ?? "[]").join(", ")}\n\nCoût déclaré : ${task.cost.toFixed(2)} $`);
+}
+
+/** Advance a managed project's base to exactly the checked commit; divergence is never overwritten. */
+export async function promoteManaged(p: Project, sha: string, releaseId: string) {
+  const job=`promote-${releaseId}`;
+  try {
+    const ws=await clone(p,job,`promote/${releaseId}`);
+    await git(ws,["merge","--ff-only",sha]);
+    await git(ws,["push","--quiet","origin",`HEAD:refs/heads/${p.branch}`],p.token,p.forge,p.repo);
+  } finally {await cleanup(job);}
+}
+
+export const trackedPaths = async (ws: Workspace) => (await git(ws,["ls-files","-z"])).split("\0").filter(Boolean);
+
+export async function assertBaseMatches(p: Project, sha: string, releaseId: string) {
+  const job=`verify-${releaseId}`;
+  try {
+    const ws=await clone(p,job,`verify/${releaseId}`);
+    const [base,artifact]=await Promise.all([git(ws,["rev-parse","HEAD^{tree}"]),git(ws,["rev-parse",`${sha}^{tree}`])]);
+    if(base.trim()!==artifact.trim())throw new Error("La proposition doit être fusionnée et correspondre à la branche de base avant publication.");
+  } finally {await cleanup(job);}
 }

@@ -49,11 +49,13 @@ function AgentSettings({ p }: { p: Project }) {
   const { orgId, isAdmin } = useOrg();
   const toast = useToast();
   const [model, setModel] = useState(p.agentModel ?? "");
+  const daily=useQuery({queryKey:["org",orgId,"project-budget",p.id],queryFn:()=>api.get<{spentUsd:number;reservedUsd:number;remainingUsd:number|null;extraUsd:number}>(`/api/orgs/${orgId}/projects/${p.id}/budget`),refetchInterval:10000});
+  const [cap,setCap]=useState(p.budgetUsdDay?.toString()??""),[tz,setTz]=useState(p.budgetTimezone??"Europe/Paris"),[submodel,setSubmodel]=useState(p.subagentModel??"");
   const [turns, setTurns] = useState(p.agentMaxTurns?.toString() ?? "");
   const [budget, setBudget] = useState(p.agentBudgetUsd?.toString() ?? "");
-  const dirty = model !== (p.agentModel ?? "") || turns !== (p.agentMaxTurns?.toString() ?? "") || budget !== (p.agentBudgetUsd?.toString() ?? "");
+  const dirty = cap!==(p.budgetUsdDay?.toString()??"") || tz!==(p.budgetTimezone??"Europe/Paris") || submodel!==(p.subagentModel??"") || model !== (p.agentModel ?? "") || turns !== (p.agentMaxTurns?.toString() ?? "") || budget !== (p.agentBudgetUsd?.toString() ?? "");
   const save = useMutation({
-    mutationFn: () => api.patch(`/api/orgs/${orgId}/projects/${p.id}`, { agentModel: model.trim() || null, agentMaxTurns: turns.trim() ? Number(turns) : null, agentBudgetUsd: budget.trim() ? Number(budget) : null }),
+    mutationFn: () => api.patch(`/api/orgs/${orgId}/projects/${p.id}`, { budgetUsdDay:cap.trim()?Number(cap):null,budgetTimezone:tz.trim(),subagentModel:submodel.trim()||null, agentModel: model.trim() || null, agentMaxTurns: turns.trim() ? Number(turns) : null, agentBudgetUsd: budget.trim() ? Number(budget) : null }),
     onSuccess: () => { invalidateOrg(orgId, "projects"); toast("Réglages enregistrés."); },
   });
   return (
@@ -64,6 +66,13 @@ function AgentSettings({ p }: { p: Project }) {
           <Field label="Tours maximum" hint="1 à 100. Vide : 30.">{(id) => <Input id={id} type="number" min={1} max={100} step={1} value={turns} onChange={(e) => setTurns(e.target.value)} disabled={!isAdmin} placeholder="30" />}</Field>
           <Field label="Budget par exécution ($)" hint="0,1 à 50. Vide : le réglage de la plateforme.">{(id) => <Input id={id} type="number" min={0.1} max={50} step={0.1} value={budget} onChange={(e) => setBudget(e.target.value)} disabled={!isAdmin} placeholder="défaut" />}</Field>
         </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Modèle des sous-agents" hint="Vide : réglage de l'organisation, Haiku par défaut.">{id=><Input id={id} value={submodel} disabled={!isAdmin} maxLength={100} onChange={e=>setSubmodel(e.target.value)} placeholder="haiku"/>}</Field>
+          <Field label="Budget journalier du projet ($)" hint="0 : en pause. Vide : illimité. Discussions et agents compris.">{id=><Input id={id} type="number" min={0} max={10000} step="0.01" value={cap} disabled={!isAdmin} onChange={e=>setCap(e.target.value)} placeholder="Ex. : 3"/>}</Field>
+          <Field label="Fuseau du budget" hint="Remise à zéro à minuit dans ce fuseau.">{id=><Input id={id} value={tz} disabled={!isAdmin} onChange={e=>setTz(e.target.value)} placeholder="Europe/Paris"/>}</Field>
+        </div>
+        {daily.data&&<p className="text-sm text-muted">Aujourd'hui : <b>{fmtUsd(daily.data.spentUsd)}</b> comptabilisés · {fmtUsd(daily.data.reservedUsd)} réservés · reste {daily.data.remainingUsd===null?"illimité":fmtUsd(daily.data.remainingUsd)}{daily.data.extraUsd>0?` · rallonge : ${fmtUsd(daily.data.extraUsd)}`:""}.</p>}
+        <p className="text-xs text-muted">Au plafond, une tâche demande 1 $ de rallonge au technicien et attend son accord ou le prochain jour. Le plafond mensuel reste prioritaire. Les montants reposent sur les coûts déclarés par le fournisseur ; une interruption sans coût final conserve une provision prudente.</p>
         <FormError error={save.error} />
         {isAdmin && <div><Button variant="primary" type="submit" loading={save.isPending} disabled={!dirty}>Enregistrer</Button></div>}
       </form>

@@ -40,7 +40,7 @@ const rootRoute = createRootRouteWithContext<{ queryClient: QueryClient }>()({
 
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute, path: "/login",
-  validateSearch: (s: Record<string, unknown>) => compact({ redirect: safePath(s.redirect) }),
+  validateSearch: (s: Record<string, unknown>) => compact({ redirect: safePath(s.redirect), sso:s.sso==="failed" || s.sso==="link_required"?s.sso:undefined }),
   beforeLoad: async ({ context }) => { if (await context.queryClient.ensureQueryData(meQuery)) throw redirect({ to: "/" }); },
   component: LoginPage,
 });
@@ -118,12 +118,14 @@ const auditRoute = createRoute({
   getParentRoute: () => orgRoute, path: "audit", component: AuditPage, beforeLoad: adminOnly,
   validateSearch: (s: Record<string, unknown>) => compact({ action: str(s.action), user: str(s.user), q: str(s.q), from: str(s.from), to: str(s.to), page: pageNo(s.page) }),
 });
+const automationsRoute = createRoute({ getParentRoute: () => orgRoute, path: "automations", component: lazyRouteComponent(() => import("./features/automations/AutomationsPage"), "AutomationsPage"), beforeLoad: adminOnly });
+const releasesRoute = createRoute({ getParentRoute: () => projectRoute, path: "releases", component: lazyRouteComponent(() => import("./features/releases/ReleasesPage"), "ReleasesPage") });
 const settingsRoute = createRoute({ getParentRoute: () => orgRoute, path: "settings", component: OrgSettingsPage, beforeLoad: adminOnly });
 const accountRoute = child("account", AccountPage);
 
 const routeTree = rootRoute.addChildren([
   loginRoute, inviteRoute, indexRoute,
-  orgRoute.addChildren([overviewRoute, conversationsRoute, conversationRoute, tasksRoute, taskRoute, projectsRoute, projectRoute.addChildren([projectOverviewRoute, projectTasksRoute, projectConversationsRoute, projectConversationRoute, projectTaskRoute, projectKnowledgeRoute, projectAiRoute, editorRoute, projectSettingsRoute]), knowledgeRoute, guideRoute, teamRoute, integrationsRoute, usageRoute, auditRoute, settingsRoute, accountRoute]),
+  orgRoute.addChildren([overviewRoute, conversationsRoute, conversationRoute, tasksRoute, taskRoute, projectsRoute, projectRoute.addChildren([projectOverviewRoute, projectTasksRoute, projectConversationsRoute, projectConversationRoute, projectTaskRoute, projectKnowledgeRoute, projectAiRoute, editorRoute, releasesRoute, projectSettingsRoute]), knowledgeRoute, guideRoute, teamRoute, integrationsRoute, usageRoute, auditRoute, automationsRoute, settingsRoute, accountRoute]),
 ]);
 
 export const router = createRouter({ routeTree, context: { queryClient: undefined as unknown as QueryClient }, defaultPreload: "intent", scrollRestoration: true });

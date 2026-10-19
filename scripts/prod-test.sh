@@ -17,6 +17,7 @@ ATELIER_PASSWORD=prod-test-pw
 ATELIER_PORT=18090
 ATELIER_CONTAINER=atelier-prodtest
 ATELIER_SANDBOX_NET=atelier-prodtest-net
+ATELIER_APPS_PORT=18092
 ATELIER_WORKDIR=$D/work
 ENV
 docker compose -p $P --env-file "$ENVF" -f docker-compose.prod.yml up -d >/dev/null 2>&1 || fail "la pile ne démarre pas"

@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { getRouteApi, Link, Outlet, useMatchRoute, useNavigate, useRouterState } from "@tanstack/react-router";
 import clsx from "clsx";
 import { BookOpen, Code2, ExternalLink, GitBranch, LayoutDashboard, ListChecks, MessageSquare, Pencil, Plus, Settings, Sparkles, type LucideIcon } from "lucide-react";
+import { Rocket } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
@@ -54,6 +55,7 @@ export function ProjectLayout() {
     { to: `${base}/conversations`, label: "Conversations", icon: MessageSquare, count: convs.data?.total },
     { to: `${base}/knowledge`, label: "Connaissances", icon: BookOpen, count: knowledgeCount },
     { to: `${base}/ai`, label: "IA", icon: Sparkles, member: true },
+    { to: `${base}/releases`, label: "Publications", icon: Rocket },
     { to: `${base}/editor`, label: "Éditeur", icon: Code2, member: true },
     { to: `${base}/settings`, label: "Configuration", icon: Settings },
   ];
@@ -82,14 +84,14 @@ export function ProjectLayout() {
             <header className="rise mb-6 flex flex-wrap items-start justify-between gap-4" style={{ ["--i" as string]: 1 }}>
               <div className="min-w-0">
                 <div className="mb-2 flex flex-wrap items-center gap-2">
-                  <Badge tone={p.forge === "none" ? "muted" : "info"}>{FORGE_LABEL[p.forge]}</Badge>
+                  <Badge tone={p.forge === "none" ? "muted" : "info"}>{p.managed ? "Atelier" : FORGE_LABEL[p.forge]}</Badge>
                   <span className="inline-flex items-center gap-1 font-mono text-xs text-muted"><GitBranch className="size-3" aria-hidden />{p.branch}</span>
                   {(p.healthUrl || p.siteUrl) && (health ? <Badge tone={health.ok ? "ok" : "bad"}>{health.ok ? "En ligne" : "Hors ligne"}</Badge> : <Badge>Contrôle en cours…</Badge>)}
                   {p.protectedPaths.length > 0 && <Badge tone="warn">{p.protectedPaths.length} chemin{p.protectedPaths.length > 1 ? "s" : ""} protégé{p.protectedPaths.length > 1 ? "s" : ""}</Badge>}
                 </div>
                 <h1 className="font-display text-3xl leading-tight">{p.name}</h1>
                 <p className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-muted">
-                  <a href={p.repo.startsWith("http") ? p.repo : undefined} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 font-mono hover:text-accent">{repoLabel(p.repo)}{p.repo.startsWith("http") && <ExternalLink className="size-3" aria-hidden />}</a>
+                  <a href={!p.managed && p.repo.startsWith("http") ? p.repo : undefined} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 font-mono hover:text-accent">{p.managed ? "Dépôt géré par Atelier" : repoLabel(p.repo)}{!p.managed && p.repo.startsWith("http") && <ExternalLink className="size-3" aria-hidden />}</a>
                   {p.siteUrl && <a href={p.siteUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 font-mono hover:text-accent">{p.siteUrl.replace(/^https?:\/\//, "")}<ExternalLink className="size-3" aria-hidden /></a>}
                 </p>
               </div>

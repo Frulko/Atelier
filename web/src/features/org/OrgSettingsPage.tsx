@@ -1,3 +1,4 @@
+import { HumanSettings } from "../human/HumanDecisions";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Check, Copy, TriangleAlert } from "lucide-react";
@@ -42,10 +43,11 @@ function ChatSettings() {
   const detail = useQuery(orgQuery(orgId));
   const c = detail.data?.chat;
   const [provider, setProvider] = useState<string | null>(null);
+  const [inputPrice,setInputPrice]=useState<string|null>(null),[outputPrice,setOutputPrice]=useState<string|null>(null);
   const [model, setModel] = useState<string | null>(null);
   const save = useMutation({
-    mutationFn: () => api.patch(`/api/orgs/${orgId}`, { chatProvider: provider ?? c?.provider, chatModel: (model ?? c?.model ?? "").trim() }),
-    onSuccess: () => { invalidateOrg(orgId); invalidateOrg(orgId, "audit"); setProvider(null); setModel(null); toast("Assistant enregistré."); },
+    mutationFn: () => api.patch(`/api/orgs/${orgId}`, { chatProvider: provider ?? c?.provider, chatModel: (model ?? c?.model ?? "").trim(), chatInputUsdPerMillion: (inputPrice??c?.inputUsdPerMillion??"") === "" ? null : Number(inputPrice??c?.inputUsdPerMillion), chatOutputUsdPerMillion: (outputPrice??c?.outputUsdPerMillion??"") === "" ? null : Number(outputPrice??c?.outputUsdPerMillion) }),
+    onSuccess: () => { invalidateOrg(orgId); invalidateOrg(orgId, "audit"); setProvider(null); setModel(null); setInputPrice(null); setOutputPrice(null); toast("Assistant enregistré."); },
   });
   if (!c) return <Skeleton className="h-24" />;
   const p = provider ?? c.provider, m = model ?? c.model;
@@ -55,11 +57,24 @@ function ChatSettings() {
         <Field label="Fournisseur">{(id) => <Select id={id} value={p} onChange={(e) => setProvider(e.target.value)}>{c.providers.map((x) => <option key={x} value={x}>{PROVIDER_LABEL[x] ?? x}</option>)}</Select>}</Field>
         <Field label="Modèle" hint="Identifiant chez le fournisseur.">{(id) => <Input id={id} value={m} maxLength={100} required onChange={(e) => setModel(e.target.value)} className="font-mono text-[13px]" />}</Field>
       </div>
+      <div className="grid gap-4 sm:grid-cols-2"><Field label="Tarif entrée (USD / million de tokens)">{id=><Input id={id} type="number" min={0} max={10000} step="any" value={inputPrice??c.inputUsdPerMillion??""} onChange={e=>setInputPrice(e.target.value)}/>}</Field><Field label="Tarif sortie (USD / million de tokens)">{id=><Input id={id} type="number" min={0} max={10000} step="any" value={outputPrice??c.outputUsdPerMillion??""} onChange={e=>setOutputPrice(e.target.value)}/>}</Field></div>
+      <p className="text-xs text-muted">Renseigne les tarifs de ton contrat pour comptabiliser les discussions dans le budget. Le montant est une estimation sur les tokens déclarés ; les remises de cache ne sont pas déduites.</p>
       <p className="text-xs text-muted">L'assistant utilise la clé de ce fournisseur déclarée dans <Link to="/o/$orgId/integrations" params={{ orgId }} className="font-medium text-accent hover:underline">Intégrations</Link>. Les tâches de l'agent ont leur propre réglage.</p>
       <FormError error={save.error} />
-      <div><Button variant="primary" type="submit" loading={save.isPending} disabled={provider === null && model === null}>Appliquer</Button></div>
+      <div><Button variant="primary" type="submit" loading={save.isPending} disabled={provider === null && model === null && inputPrice === null && outputPrice === null}>Appliquer</Button></div>
     </form>
   );
+}
+
+function AgentDefaults() {
+  const {orgId}=useOrg(),detail=useQuery(orgQuery(orgId));
+  const [model,setModel]=useState<string|null>(null),[sub,setSub]=useState<string|null>(null),[cap,setCap]=useState<string|null>(null);
+  const save=useMutation({mutationFn:()=>api.patch(`/api/orgs/${orgId}`,{agentModel:(model??detail.data?.agentModel??"haiku").trim(),subagentModel:(sub??detail.data?.subagentModel??"haiku").trim(),budgetUsdMonth:(cap??detail.data?.budgetUsdMonth??"")===""?null:Number(cap??detail.data?.budgetUsdMonth)}),onSuccess:()=>{setModel(null);setSub(null);setCap(null);invalidateOrg(orgId);}});
+  return <Card className="grid gap-4 p-6"><p className="text-sm text-muted">Le modèle de discussion reste indépendant. Les agents et leurs sous-agents utilisent Haiku par défaut, sauf surcharge dans le projet.</p><form className="grid gap-4" onSubmit={e=>{e.preventDefault();save.mutate();}}>
+    <div className="grid gap-4 sm:grid-cols-2"><Field label="Modèle des agents">{id=><Input id={id} required value={model??detail.data?.agentModel??"haiku"} onChange={e=>setModel(e.target.value)} placeholder="haiku"/>}</Field><Field label="Modèle des sous-agents">{id=><Input id={id} required value={sub??detail.data?.subagentModel??"haiku"} onChange={e=>setSub(e.target.value)} placeholder="haiku"/>}</Field></div>
+    <Field label="Plafond mensuel de l'organisation ($)" hint="Les crédits Max restent gérés par Anthropic. Indique ici ton plafond, par exemple 200 $. Vide : illimité.">{id=><Input id={id} type="number" min={0} max={1000000} step="0.01" value={cap??detail.data?.budgetUsdMonth??""} onChange={e=>setCap(e.target.value)} placeholder="200"/>}</Field>
+    <FormError error={save.error}/><div><Button variant="primary" type="submit" loading={save.isPending} disabled={model===null&&sub===null&&cap===null}>Enregistrer les limites</Button></div>
+  </form></Card>;
 }
 
 export function OrgSettingsPage() {
@@ -98,6 +113,9 @@ export function OrgSettingsPage() {
         <Section title="Assistant de discussion" index={2}>
           <Card className="p-6"><ChatSettings /></Card>
         </Section>
+
+        <Section title="Agents et plafond global" index={3}><AgentDefaults/></Section>
+        <Section title="Décisions du technicien" index={4}><HumanSettings/></Section>
 
         <Section title="Budget des modèles" index={2}>
           <Card className="flex flex-wrap items-center justify-between gap-4 p-6">

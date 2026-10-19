@@ -8,12 +8,12 @@ LABEL org.opencontainers.image.title="Atelier sandbox" \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.version="${ATELIER_VERSION}" \
       org.opencontainers.image.source="${ATELIER_SOURCE}"
-RUN apt-get update && apt-get install -y --no-install-recommends ripgrep ca-certificates \
+RUN apt-get update && apt-get install -y --no-install-recommends ripgrep ca-certificates chromium \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /opt/runner
 COPY package.json ./
 RUN npm install --omit=dev --no-audit --no-fund
-COPY runner.mjs ./
+COPY runner.mjs install.mjs serve.mjs qa.mjs ./
 # uid 1000 : l'utilisateur "node" ; claude refuse de tourner en root avec bypassPermissions.
 USER node
 WORKDIR /work

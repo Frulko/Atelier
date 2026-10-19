@@ -1,6 +1,8 @@
+import { join } from "node:path";
 import { cfg, inferForge, type Project } from "./config.ts";
 import type { ProjectRow } from "./db.ts";
 import { urlProblem } from "./health.ts";
+import { getOrg } from "./db.ts";
 import { readSecret } from "./vault.ts";
 
 export const ENGINES = ["claude"];
@@ -11,6 +13,7 @@ export type ProjectFields = {
   slug: string; name: string; repo: string; branch: string; forge: "gitlab" | "github" | "none";
   check: string; engine: string; protectedPaths: string[]; gitSecretId: string | null;
   siteUrl: string | null; healthUrl: string | null;
+  budgetUsdDay: number | null; budgetTimezone: string; subagentModel: string | null;
   instructions: string | null; agentModel: string | null; agentMaxTurns: number | null; agentBudgetUsd: number | null;
 };
 type Result = { ok: true; value: Partial<ProjectFields> } | { ok: false; error: string };
@@ -74,6 +77,19 @@ export function validateProject(input: any, partial: boolean): Result {
     else if (typeof input.instructions !== "string" || input.instructions.length > INSTRUCTIONS_MAX || input.instructions.includes("\0")) return { ok: false, error: `instructions invalides (${INSTRUCTIONS_MAX} caractères au plus)` };
     else v.instructions = input.instructions.trim() || null;
   } else if (!partial) v.instructions = null;
+  if (input.budgetUsdDay !== undefined) {
+    if (input.budgetUsdDay !== null && (typeof input.budgetUsdDay !== "number" || !Number.isFinite(input.budgetUsdDay) || input.budgetUsdDay < 0 || input.budgetUsdDay > 10000)) return {ok:false,error:"Budget journalier invalide (0 à 10 000 USD, ou null)."};
+    v.budgetUsdDay=input.budgetUsdDay;
+  }
+  if (input.budgetTimezone !== undefined) {
+    try { if(typeof input.budgetTimezone!=="string" || input.budgetTimezone.length>80) throw Error(); new Intl.DateTimeFormat("fr",{timeZone:input.budgetTimezone}); }
+    catch { return {ok:false,error:"Fuseau horaire invalide."}; }
+    v.budgetTimezone=input.budgetTimezone;
+  }
+  if (input.subagentModel !== undefined) {
+    if(input.subagentModel!==null && (typeof input.subagentModel!=="string" || !/^[A-Za-z0-9._:/-]{1,100}$/.test(input.subagentModel))) return {ok:false,error:"Modèle des sous-agents invalide."};
+    v.subagentModel=input.subagentModel;
+  }
   if (input.agentModel !== undefined) {
     if (input.agentModel === null || input.agentModel === "") v.agentModel = null;
     else if (typeof input.agentModel !== "string" || !/^[A-Za-z0-9._:/-]{1,100}$/.test(input.agentModel)) return { ok: false, error: "modèle de l'agent invalide" };
@@ -103,7 +119,8 @@ function repoProblem(repo: unknown): string | null {
 }
 
 export const rowToJson = (r: ProjectRow) => ({
-  id: r.id, slug: r.slug, name: r.name, repo: r.repo, branch: r.branch, forge: r.forge, check: r.check_cmd,
+  budgetUsdDay:r.budget_usd_day??null, budgetTimezone:r.budget_timezone||"Europe/Paris", subagentModel:r.subagent_model??null,
+  id: r.id, managed: !!r.managed, runtime: r.runtime_json ? JSON.parse(r.runtime_json) : null, slug: r.slug, name: r.name, repo: r.repo, branch: r.branch, forge: r.forge, check: r.check_cmd,
   engine: r.engine, protectedPaths: JSON.parse(r.protected_paths) as string[], gitSecretId: r.git_secret_id,
   siteUrl: r.site_url ?? null, healthUrl: r.health_url ?? null,
   instructions: r.instructions ?? null, agentModel: r.agent_model ?? null, agentMaxTurns: r.agent_max_turns ?? null, agentBudgetUsd: r.agent_budget_usd ?? null,
@@ -112,8 +129,9 @@ export const rowToJson = (r: ProjectRow) => ({
 /** Projet prêt à l'emploi pour le pipeline : le token git est déchiffré ICI, à l'instant de l'usage. */
 export function rowToProject(r: ProjectRow): Project {
   return {
-    id: r.id, name: r.name, repo: r.repo, branch: r.branch, forge: r.forge, check: r.check_cmd, engine: r.engine,
+    id: r.id, orgId: r.org_id, name: r.name, repo: r.managed ? join(cfg.workDir, "_repos", `${r.id}.git`) : r.repo, branch: r.branch, forge: r.forge, check: r.check_cmd, engine: r.engine,
     protectedPaths: JSON.parse(r.protected_paths), token: readSecret(r.org_id, r.git_secret_id) ?? "",
+    agentModel:r.agent_model || getOrg(r.org_id)?.agent_model || "haiku", subagentModel:r.subagent_model || getOrg(r.org_id)?.subagent_model || "haiku",
     ...(r.instructions ? { instructions: r.instructions } : {}), ...(r.agent_model ? { agentModel: r.agent_model } : {}),
     ...(r.agent_max_turns ? { agentMaxTurns: r.agent_max_turns } : {}), ...(r.agent_budget_usd ? { agentBudgetUsd: r.agent_budget_usd } : {}),
   };

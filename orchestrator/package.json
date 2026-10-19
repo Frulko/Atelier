@@ -13,6 +13,7 @@
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "@types/web-push": "^3.6.4",
     "typescript": "^5.9.0"
   },
   "dependencies": {
@@ -21,6 +22,9 @@
     "@ai-sdk/openai-compatible": "^3.0.62",
     "@ai-sdk/provider": "^4.0.21",
     "ai": "^7.0.127",
+    "cron-parser": "^5.10.2",
+    "openid-client": "^6.8.8",
+    "web-push": "^3.6.7",
     "zod": "^4.6.5"
   }
 }

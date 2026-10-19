@@ -24,6 +24,7 @@ WORKDIR /app
 COPY orchestrator/package.json orchestrator/package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund
 COPY orchestrator/src ./src
+COPY orchestrator/templates ./templates
 COPY --from=web /web/dist ./public
 ENV NODE_ENV=production PUBLIC_DIR=/app/public
 EXPOSE 8080

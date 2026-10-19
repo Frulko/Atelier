@@ -6,9 +6,9 @@ import { useOrg } from "../../lib/useOrg";
 
 const SECTION: Record<string, string> = {
   conversations: "Conversations", tasks: "Tâches", projects: "Projets", knowledge: "Connaissances", guide: "Guide", team: "Équipe",
-  integrations: "Intégrations", usage: "Usage", audit: "Journal d'audit", settings: "Organisation", account: "Compte",
+  automations: "Agents", releases: "Publications", integrations: "Intégrations", usage: "Usage", audit: "Journal d'audit", settings: "Organisation", account: "Compte",
 };
-const PROJECT_SECTION: Record<string, string> = { tasks: "Tâches", conversations: "Conversations", knowledge: "Connaissances", editor: "Éditeur", ai: "IA", settings: "Configuration" };
+const PROJECT_SECTION: Record<string, string> = { releases: "Publications", tasks: "Tâches", conversations: "Conversations", knowledge: "Connaissances", editor: "Éditeur", ai: "IA", settings: "Configuration" };
 
 type Crumb = { label: string; to?: string; params?: Record<string, string> };
 

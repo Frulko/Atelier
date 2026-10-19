@@ -1,5 +1,6 @@
+import { ssoPublicApi, ssoAccountApi } from "./sso.ts";
 import http from "node:http";
-import { countConversationsOf, countMessages, deleteConversation, getConversationFor, getMessages, insertConversation, listConversations, setConversationTitle, setOrgChat, type ConversationRow, countKnowledge, deleteKnowledge, getKnowledge, insertKnowledge, listKnowledge, updateKnowledge, secretUsers, updateSecret, listSessions, deleteSessionByPrefix, setUserName, renameOrg, activeTaskCount, deleteOrgCascade, orgStats, orgUsage, queryAudit, userActivity, getUserById, STATUSES, queryTasks, getTaskDetail, type Status, addEvent, addMember, bus, consumeInvitation, countOrgsOf, countOwners, createOrg, createUser, deleteInvitation, findInvitation, insertInvitation, listInvitations, listMembers, removeMember, setMemberRole, createTask, getOrg, monthSpend, setOrgBudget, deleteProject, deleteSecret, getEvents, getProjectInOrg, getSecretRow, getTask, getTaskInOrg, getUserByEmail, insertProject, listProjects, listSecrets, listTasks, orgsOf, roleOf, secretInUse, updatePassword, updateProject, updateTask, type Evt, type Role, type User } from "./db.ts";
+import { db, countConversationsOf, countMessages, deleteConversation, getConversationFor, getMessages, insertConversation, listConversations, setConversationTitle, setOrgChat, type ConversationRow, countKnowledge, deleteKnowledge, getKnowledge, insertKnowledge, listKnowledge, updateKnowledge, secretUsers, updateSecret, listSessions, deleteSessionByPrefix, setUserName, renameOrg, activeTaskCount, deleteOrgCascade, orgStats, orgUsage, queryAudit, userActivity, getUserById, STATUSES, queryTasks, getTaskDetail, type Status, addEvent, addMember, bus, consumeInvitation, countOrgsOf, countOwners, createOrg, createUser, deleteInvitation, findInvitation, insertInvitation, listInvitations, listMembers, removeMember, setMemberRole, createTask, getOrg, monthSpend, setOrgBudget, deleteProject, deleteSecret, getEvents, getProjectInOrg, getSecretRow, getTask, getTaskInOrg, getUserByEmail, insertProject, listProjects, listSecrets, listTasks, orgsOf, roleOf, secretInUse, updatePassword, updateProject, updateTask, type Evt, type Role, type User } from "./db.ts";
 import { rotateSecret, storeSecret } from "./vault.ts";
 import { AI_FILE, repoAiFile, repoAiFiles, verifyAccess } from "./git.ts";
 import { rowToProject } from "./projects.ts";
@@ -23,13 +24,8 @@ import { refreshProject } from "./monitor.ts";
 import { cleanAttachments, MAX_BODY_BYTES } from "./attachments.ts";
 import { CHAT_PROVIDERS, effectiveChat, MAX_MESSAGE_CHARS, MAX_MESSAGES, runChat, textOf, toUIMessage } from "./chat.ts";
 
-const json = (res: http.ServerResponse, code: number, body: unknown, headers: Record<string, string> = {}) =>
-  res.writeHead(code, { "content-type": "application/json", ...headers }).end(JSON.stringify(body));
-
-const body = (req: http.IncomingMessage, max = 1e5) => new Promise<any>((ok, ko) => {
-  let s = ""; req.on("data", (d) => { s += d; if (s.length > max) req.destroy(); });
-  req.on("end", () => { try { ok(JSON.parse(s || "{}")); } catch (e) { ko(e); } });
-});
+import { json, body, HttpError } from "./http.ts";
+import { platformApi } from "./platform-api.ts";
 
 // Derrière un reverse proxy (HTTPS), TRUST_PROXY=1 : on lit l'IP et le schéma dans X-Forwarded-*.
 const trustProxy = process.env.TRUST_PROXY === "1";
@@ -64,7 +60,7 @@ const denyAccess = (res: http.ServerResponse, a: "not_found" | "forbidden") =>
 
 const orgJson = (orgId: string) => {
   const o = getOrg(orgId)!;
-  return { id: o.id, name: o.name, budgetUsdMonth: o.budget_usd_month, monthSpendUsd: Math.round(monthSpend(orgId) * 100) / 100, chat: { ...effectiveChat(o), providers: CHAT_PROVIDERS } };
+  return { id: o.id, name: o.name, agentModel:o.agent_model||"haiku", subagentModel:o.subagent_model||"haiku", budgetUsdMonth: o.budget_usd_month, monthSpendUsd: Math.round(monthSpend(orgId) * 100) / 100, chat: { inputUsdPerMillion: o.chat_input_price, outputUsdPerMillion: o.chat_output_price, ...effectiveChat(o), providers: CHAT_PROVIDERS } };
 };
 
 const device = (req: http.IncomingMessage) => ({ userAgent: String(req.headers["user-agent"] ?? ""), ip: clientIp(req) });
@@ -107,6 +103,8 @@ export function createApp() {
     try {
       if (req.method !== "GET" && req.method !== "HEAD" && !sameOrigin(req)) return json(res, 403, { error: "origine refusée" });
 
+      if(await ssoPublicApi(req,res,url,isSecure(req)))return;
+
       // ---- connexion : seule route /api accessible sans session
       if (req.method === "POST" && url.pathname === "/api/auth/login") {
         const { email, password } = await body(req);
@@ -127,7 +125,7 @@ export function createApp() {
         const { token: invToken, password } = await body(req);
         const inv = typeof invToken === "string" ? findInvitation(hashInviteToken(invToken)) : undefined;
         if (!inv) return json(res, 404, { error: "invitation invalide ou expirée" }); // même réponse : inconnue, expirée ou déjà utilisée
-        const current = userFromToken(tokenFromCookie(req.headers.cookie));
+        const current = userFromToken(tokenFromCookie(req.headers.cookie, isSecure(req)));
         if (current) {
           // un jeton volé ne suffit pas : l'adresse du compte connecté doit être celle de l'invitation
           if (current.email !== inv.email) return json(res, 403, { error: "cette invitation est destinée à une autre adresse e-mail" });
@@ -155,9 +153,13 @@ export function createApp() {
       }
 
       // ---- tout le reste de l'API exige une session
-      const token = tokenFromCookie(req.headers.cookie);
+      const token = tokenFromCookie(req.headers.cookie, isSecure(req));
       const user = userFromToken(token);
       if (!user || !token) return json(res, 401, { error: "connexion requise" });
+
+      if(await ssoAccountApi(req,res,url,user,token))return;
+
+      if (await platformApi(req, res, url, user, clientIp(req), token)) return;
 
       if (req.method === "POST" && url.pathname === "/api/auth/logout") {
         endSession(token);
@@ -217,11 +219,14 @@ export function createApp() {
       }
       if (og && req.method === "PATCH") {
         const b = await body(req);
+        const wantsAgent = b.agentModel !== undefined || b.subagentModel !== undefined;
+        const wantsPricing = b.chatInputUsdPerMillion !== undefined || b.chatOutputUsdPerMillion !== undefined;
         const wantsName = b.name !== undefined, wantsBudget = b.budgetUsdMonth !== undefined, wantsChat = b.chatProvider !== undefined || b.chatModel !== undefined;
-        if (!wantsName && !wantsBudget && !wantsChat) return json(res, 400, { error: "rien à modifier" });
-        const a = access(user, og[1], wantsName || wantsChat ? "org:rename" : "org:budget");
+        if (!wantsName && !wantsBudget && !wantsChat && !wantsPricing && !wantsAgent) return json(res, 400, { error: "rien à modifier" });
+        const a = access(user, og[1], wantsName || wantsChat || wantsPricing || wantsAgent ? "org:rename" : "org:budget");
         if (typeof a === "string") return denyAccess(res, a);
         const ctx = { orgId: og[1], userId: user.id, ip: clientIp(req) };
+        if(wantsAgent) for(const key of ["agentModel","subagentModel"]) if(b[key]!==undefined && b[key]!==null && (typeof b[key]!=="string" || !/^[A-Za-z0-9._:/-]{1,100}$/.test(b[key]))) return json(res,400,{error:"Identifiant de modèle invalide."});
         if (wantsName) {
           if (typeof b.name !== "string" || !b.name.trim() || b.name.trim().length > 80) return json(res, 400, { error: "nom invalide" });
         }
@@ -229,13 +234,29 @@ export function createApp() {
           const v = b.budgetUsdMonth;
           if (!(v === null || (typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 1e6))) return json(res, 400, { error: "budget invalide (nombre ≥ 0, ou null pour illimité)" });
         }
+        if (wantsPricing) {
+          for (const key of ["chatInputUsdPerMillion","chatOutputUsdPerMillion"]) {
+            if (b[key] !== undefined && b[key] !== null && (typeof b[key] !== "number" || !Number.isFinite(b[key]) || b[key] < 0 || b[key] > 10000)) return json(res,400,{error:"Tarif invalide (USD par million de tokens)."});
+          }
+        }
         if (wantsChat) {
           const cur = getOrg(og[1])!;
           const provider = b.chatProvider === undefined ? cur.chat_provider : b.chatProvider, model = b.chatModel === undefined ? cur.chat_model : b.chatModel;
           if (provider !== null && !(CHAT_PROVIDERS as readonly string[]).includes(provider)) return json(res, 400, { error: "fournisseur invalide" });
           if (model !== null && !(typeof model === "string" && /^[A-Za-z0-9._:/-]{1,100}$/.test(model))) return json(res, 400, { error: "identifiant de modèle invalide" });
           setOrgChat(og[1], provider, model);
+          if (provider !== cur.chat_provider || model !== cur.chat_model) db.prepare("update orgs set chat_input_price=null,chat_output_price=null where id=?").run(og[1]);
           audit(ctx, "org.chat_set", { type: "org", id: og[1] }, { provider, model });
+        }
+        if (wantsPricing) {
+          const cur=getOrg(og[1])!;
+          db.prepare("update orgs set chat_input_price=?,chat_output_price=? where id=?").run(b.chatInputUsdPerMillion===undefined?cur.chat_input_price:b.chatInputUsdPerMillion,b.chatOutputUsdPerMillion===undefined?cur.chat_output_price:b.chatOutputUsdPerMillion,og[1]);
+          audit(ctx,"org.chat_pricing",{type:"org",id:og[1]});
+        }
+        if(wantsAgent) {
+          const cur=getOrg(og[1])!;
+          db.prepare("update orgs set agent_model=?,subagent_model=? where id=?").run(b.agentModel===undefined?cur.agent_model:b.agentModel,b.subagentModel===undefined?cur.subagent_model:b.subagentModel,og[1]);
+          audit(ctx,"org.agent_models",{type:"org",id:og[1]});
         }
         if (wantsName) { const from = getOrg(og[1])!.name; renameOrg(og[1], b.name.trim()); audit(ctx, "org.rename", { type: "org", id: og[1] }, { from, to: b.name.trim() }); }
         if (wantsBudget) { setOrgBudget(og[1], b.budgetUsdMonth); audit(ctx, "org.budget_set", { type: "org", id: og[1] }, { budgetUsdMonth: b.budgetUsdMonth }); }
@@ -481,6 +502,7 @@ export function createApp() {
             if (f.gitSecretId && getSecretRow(f.gitSecretId, orgId)?.kind !== "git_token") return json(res, 400, { error: "secret git introuvable" });
             try {
               const id = insertProject({ org_id: orgId, slug: f.slug, name: f.name, repo: f.repo, branch: f.branch, forge: f.forge, check_cmd: f.check, engine: f.engine, protected_paths: JSON.stringify(f.protectedPaths), git_secret_id: f.gitSecretId, site_url: f.siteUrl, health_url: f.healthUrl });
+              updateProject(id,orgId,{budget_usd_day:f.budgetUsdDay??null,budget_timezone:f.budgetTimezone||"Europe/Paris",subagent_model:f.subagentModel??null,agent_model:f.agentModel??null,agent_max_turns:f.agentMaxTurns??null,agent_budget_usd:f.agentBudgetUsd??null,instructions:f.instructions??null});
               log("project.create", { type: "project", id }, { slug: f.slug, name: f.name });
               return json(res, 201, rowToJson(getProjectInOrg(id, orgId)!));
             } catch (e) {
@@ -501,6 +523,8 @@ export function createApp() {
               const v = validateProject(await body(req), true);
               if (!v.ok) return json(res, 400, { error: v.error });
               const f = v.value;
+              const currentProject=getProjectInOrg(itemId,orgId)!;
+              if(currentProject.managed && ((f.repo!==undefined && f.repo!==currentProject.repo) || (f.forge!==undefined && f.forge!=="none") || f.gitSecretId)) return json(res,409,{error:"Le dépôt est géré par Atelier : son adresse, sa forge et son accès ne peuvent pas être remplacés."});
               if (f.gitSecretId && getSecretRow(f.gitSecretId, orgId)?.kind !== "git_token") return json(res, 400, { error: "secret git introuvable" });
               const patch: Record<string, string | number | null> = {};
               if (f.slug !== undefined) patch.slug = f.slug;
@@ -516,6 +540,9 @@ export function createApp() {
               if (f.healthUrl !== undefined) patch.health_url = f.healthUrl;
               if (f.instructions !== undefined) patch.instructions = f.instructions;
               if (f.agentModel !== undefined) patch.agent_model = f.agentModel;
+              if (f.subagentModel !== undefined) patch.subagent_model = f.subagentModel;
+              if (f.budgetUsdDay !== undefined) patch.budget_usd_day = f.budgetUsdDay;
+              if (f.budgetTimezone !== undefined) patch.budget_timezone = f.budgetTimezone;
               if (f.agentMaxTurns !== undefined) patch.agent_max_turns = f.agentMaxTurns;
               if (f.agentBudgetUsd !== undefined) patch.agent_budget_usd = f.agentBudgetUsd;
               try { updateProject(itemId, orgId, patch); } catch (e) {
@@ -740,7 +767,8 @@ export function createApp() {
       }
       res.writeHead(404).end();
     } catch (e) {
-      json(res, 500, { error: String(e) });
+      if (e instanceof HttpError) { json(res, e.status, { error: e.message }); return; }
+      json(res, 500, { error: "Une erreur interne empêche cette opération." });
     }
   });
 }

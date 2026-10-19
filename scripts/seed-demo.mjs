@@ -71,7 +71,7 @@ for (let age = 44; age >= 0; age--) {
     db.createTask(id, org, user.id, project.id, pick(prompts));
     db.updateTaskCreatedAtForTest(id, Math.min(created, now - 60_000));
     const files = status === "done" ? [pick(["app.js", "style.css", "index.html", "cantine.js", "server.js"]), ...(rnd() < 0.4 ? ["NOTES.md"] : [])] : [];
-    db.updateTask(id, { status, cost, started_at: Math.min(created, now - 60_000) + 2000, finished_at: Math.min(created, now - 60_000) + 2000 + secs * 1000, branch: status === "done" ? `atelier/${id}` : null, files_json: files.length ? JSON.stringify(files) : null, flagged: files.includes("cantine.js") ? 1 : 0 });
+    db.updateTask(id, { status, cost, started_at: Math.min(created, now - 60_000) + 2000, finished_at: Math.min(created, now - 60_000) + 2000 + secs * 1000, branch: status === "done" ? `atelier/${id}` : null, files_json: files.length ? JSON.stringify(files) : null, flagged: files.includes("cantine.js") ? 1 : 0 }, created);
     for (const [t, text] of [["step", "Demande reçue, en file d'attente."], ["step", "Copie du projet dans le bac à sable…"], ["step", "L'agent travaille…"], ["text", "J'ai préparé la modification demandée."], ["step", "Vérification du projet…"], [status === "failed" ? "error" : "done", status === "failed" ? "La vérification échoue encore après les corrections." : status === "done" ? `Branche atelier/${id} envoyée.` : "Terminé."]])
       db.addEvent(id, t, text);
     const at = Math.min(created, now - 60_000);

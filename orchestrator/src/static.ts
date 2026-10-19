@@ -21,7 +21,8 @@ const MIME: Record<string, string> = {
 // (positions et largeurs calculées) sont tolérés, pas les balises <style> ni les scripts en ligne.
 export const CSP = [
   "default-src 'self'", "script-src 'self' 'wasm-unsafe-eval'", "style-src 'self'", "style-src-attr 'unsafe-inline'", "img-src 'self' data: blob:", "font-src 'self'",
-  "connect-src 'self' blob:", "frame-ancestors 'none'", "base-uri 'none'", "form-action 'self'", "object-src 'none'",
+  ...(process.env.ATELIER_APPS_DOMAIN && /^[a-z0-9.-]+$/.test(process.env.ATELIER_APPS_DOMAIN) ? [`frame-src ${process.env.ATELIER_APPS_SCHEME === "http" ? "http" : "https"}://*.${process.env.ATELIER_APPS_DOMAIN}${process.env.ATELIER_APPS_PUBLIC_PORT ? `:${process.env.ATELIER_APPS_PUBLIC_PORT}` : ""}`] : []),
+  `connect-src 'self' blob:${process.env.ATELIER_APPS_DOMAIN && /^[a-z0-9.-]+$/.test(process.env.ATELIER_APPS_DOMAIN) ? ` ${process.env.ATELIER_APPS_SCHEME === "http" ? "http" : "https"}://*.${process.env.ATELIER_APPS_DOMAIN}${process.env.ATELIER_APPS_PUBLIC_PORT ? `:${process.env.ATELIER_APPS_PUBLIC_PORT}` : ""}` : ""}`, "frame-ancestors 'none'", "base-uri 'none'", "form-action 'self'", "object-src 'none'",
 ].join("; ");
 
 /** La page d'entrée reçoit un jeton à usage unique pour les balises <style> que l'éditeur de code crée lui-même (Monaco) : pas de 'unsafe-inline'. */
@@ -67,7 +68,7 @@ export async function serveStatic(req: http.IncomingMessage, res: http.ServerRes
     "content-type": MIME[extname(target)] ?? "application/octet-stream",
     "content-length": body.length,
     // les fichiers de /assets/ ont un nom qui change avec leur contenu : on peut les garder un an ; la page d'entrée jamais
-    "cache-control": isIndex ? "no-cache" : rel.startsWith("/assets/") ? "public, max-age=31536000, immutable" : "public, max-age=86400",
+    "cache-control": (isIndex || rel === "/sw.js") ? "no-cache" : rel.startsWith("/assets/") ? "public, max-age=31536000, immutable" : "public, max-age=86400",
   });
   res.end(req.method === "HEAD" ? undefined : body);
   return true;

@@ -8,7 +8,7 @@ Three commands. All three must be green before a commit.
 | `npm test` | `orchestrator/` | Unit and HTTP integration tests (`node --test`), in-memory database | Node |
 | `npm run check` · `npm test` · `npm run build` | `web/` | Type-checks, runs the unit tests (formatting, roles, wording) and builds the web application | Node |
 | `./scripts/prod-test.sh` | repo root | Starts `docker-compose.prod.yml` with locally built images and checks it becomes healthy, serves the app and accepts the first sign-in | Docker |
-| `./scripts/smoke.sh` | repo root | End-to-end test of the whole stack in Docker, **no AI, no API key**. Also drives the web UI in a browser when Playwright is installed | Docker (+ `pip install playwright` and Chrome for the UI part) |
+| `./scripts/smoke.sh` | repo root | End-to-end test of the whole stack in Docker, **no AI, no API key**. Also drives the web UI in a browser when Playwright is installed | Docker, Node 24 (+ `pip install playwright` and Chrome for the UI part) |
 
 ## What is covered
 
@@ -55,9 +55,9 @@ Three commands. All three must be green before a commit.
 
 - The **real Claude agent** inside the sandbox (proxy + SDK end to end). Only the fake agent runs in tests.
 - A **real GitLab merge request** and a **real GitHub pull request**. Code exists; it has only run against local git repositories.
-- Task **cancellation while an agent is running**.
+- Cancellation of a **real Claude agent** during inference (check-stage cancellation runs against Docker; provider stream cancellation runs against a local fake).
 - The UI on **Firefox and Safari**: the browser test runs Chrome only. Dark mode is toggled and a phone-sized layout is exercised, but not compared pixel by pixel.
-- Docker-level isolation guarantees (resource limits, dropped capabilities) are configured but not asserted.
+- Kernel-level isolation guarantees and resistance to container escapes. Runtime identity, absent socket/platform keys and blocked network destinations are asserted, not a proof of isolation against every attack.
 
 ## The fake agent and the fake projects
 
@@ -75,3 +75,20 @@ To test without any AI, the sandbox can run a **deterministic fake agent** (`ATE
 - Every new route that touches organization data needs an **isolation test** in the style of `isolation.test.ts`.
 - Tests must not need Docker or Internet access; use the in-memory database (`DB_FILE=:memory:`). Anything that needs Docker belongs in `smoke.sh`.
 - Set the environment variables *before* dynamically importing the modules: configuration is read at import time.
+
+## Background agents and application publication
+
+`platform.test.ts` covers cron/DST validation, organization isolation, permission changes, daily execution limits, failure pauses, private inbox/read marks, push endpoint validation and expiration, persisted queue recovery, cross-month expenses, conversation context, encrypted environment values and template generation. The generated Node application runs its own HTTP test for accounts, scoped data, file access and CSRF.
+
+`security.test.ts` covers metadata/private addresses including IPv4-mapped IPv6, git network restrictions, application CSP, host-only HTTPS session cookies and secret/path/symlink detection. Proxy tests also verify capability separation and key redaction across streaming chunks.
+
+The Docker smoke test creates a static application, verifies unauthenticated preview access is refused, authorizes a preview, obtains browser screenshots, publishes twice and rolls back. It builds a real React/Vite template through the npm proxy and starts a background agent without a browser. UI tests include Agents, Notifications and Publications. Web Push delivery to a real browser/OS and real model/forge credentials remain unverified.
+
+`scripts/app-check.mjs` exercises the disposable smoke stack: Node starter publication, account isolation, SQLite persistence across publications, absence of platform keys/socket in the runtime, and blocked Internet/metadata/sibling-container access.
+
+`pipeline.test.ts` uses real git and a controlled Docker executable to exercise cancellation racing with a successful check, preservation of a prior follow-up proposal, and permission removal before push. The smoke script also cancels an actual Docker check and verifies that no remote branch was created. `proxy.test.ts` verifies secret refusal in decoded JSON, keys, query strings and headers, oversized/malformed requests, and closure of an active provider stream when its task token is revoked.
+
+
+`governance.test.ts` covers DST/local-midnight budgets, reservations without duplicate charges, model inheritance, encrypted bot configuration, authorized message-bound replies and daily-only extensions. `model-budget.test.ts` covers pre-call cost reservations, unpriced options and usage settlement. `sso.test.ts` uses signed RSA ID tokens and a local mock Keycloak provider to verify PKCE, state/nonce/browser binding, signature rejection, verified e-mail matching, explicit association, replay prevention and local password access. A real Keycloak realm and real bot delivery remain deployment checks.
+
+`scripts/governance-check.mjs`, called by the Docker smoke test, verifies a task's saved workspace survives a technician wait/resume and that a daily cap blocks execution until an extension is approved. Pipeline tests advance the clock to verify automatic next-day resumption after a declined extension.

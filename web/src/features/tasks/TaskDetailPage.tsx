@@ -1,3 +1,4 @@
+import { HumanQuestions } from "../human/HumanDecisions";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { ArrowLeft, ExternalLink, FileCode2, GitBranch, RotateCcw, ShieldAlert, Square } from "lucide-react";
@@ -49,6 +50,12 @@ export function TaskDetailPage() {
     onError: (e) => toast(e instanceof Error ? e.message : "Échec", "bad"),
   });
 
+  const resume = useMutation({
+    mutationFn: () => api.post(`/api/orgs/${orgId}/tasks/${taskId}/resume`),
+    onSuccess: () => { invalidateOrg(orgId, "task"); invalidateOrg(orgId, "tasks"); toast("Proposition reprise sans relancer l'agent."); },
+    onError: (e) => toast(e instanceof Error ? e.message : "Échec", "bad"),
+  });
+
   if (q.isLoading) return <div className="grid gap-4"><Skeleton className="h-10 w-2/3" /><Skeleton className="h-32" /><Skeleton className="h-64" /></div>;
   if (q.isError || !t) return <><Link to="/o/$orgId/tasks" params={{ orgId }} className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted hover:text-ink"><ArrowLeft className="size-4" />Toutes les tâches</Link><ErrorBox error={q.error ?? new Error("Tâche introuvable.")} /></>;
 
@@ -58,6 +65,7 @@ export function TaskDetailPage() {
 
   return (
     <>
+      <HumanQuestions taskId={taskId}/>
       <Link to="/o/$orgId/tasks" params={{ orgId }} className="rise mb-5 inline-flex items-center gap-1.5 text-sm text-muted hover:text-ink"><ArrowLeft className="size-4" />Toutes les tâches</Link>
       <header className="rise mb-8 flex flex-wrap items-start justify-between gap-4" style={{ ["--i" as string]: 1 }}>
         <div className="min-w-0 max-w-3xl">
@@ -67,9 +75,12 @@ export function TaskDetailPage() {
         <div className="flex flex-wrap gap-2">
           {t.mr_url && <a href={t.mr_url} target="_blank" rel="noopener noreferrer"><Button variant="primary" icon={<ExternalLink className="size-4" />}>Ouvrir la proposition</Button></a>}
           {canCancel && <ConfirmButton variant="secondary" icon={<Square className="size-3.5" />} onConfirm={() => cancel.mutate()} loading={cancel.isPending}>Annuler</ConfirmButton>}
+          {!live && isMember && t.status === "failed" && t.turn === 1 && t.pushed_sha && t.last_error && <Button onClick={() => resume.mutate()} loading={resume.isPending}>Reprendre la proposition</Button>}
           {!live && isMember && <Button icon={<RotateCcw className="size-4" />} onClick={() => retry.mutate()} loading={retry.isPending}>Relancer</Button>}
         </div>
       </header>
+
+      {t.last_error && <p role="alert" className="mb-5 rounded-lg bg-warn-soft p-4 text-sm text-warn">Dernière exécution : {t.last_error}</p>}
 
       {t.flagged > 0 && (
         <div role="alert" className="rise mb-6 flex items-start gap-3 rounded-xl border border-warn/40 bg-warn-soft p-4 text-sm text-warn" style={{ ["--i" as string]: 2 }}>
@@ -83,7 +94,7 @@ export function TaskDetailPage() {
           <Meta label="Projet">{t.project_name ?? "(supprimé)"}</Meta>
           <Meta label="Demandée par"><span className="flex items-center gap-2"><Avatar name={t.user_email} size={24} /><span className="truncate">{t.user_email ?? "—"}</span></span></Meta>
           <Meta label="Lancée"><span title={fmtDateTime(t.created_at)}>{relTime(t.created_at)}</span></Meta>
-          <Meta label="Durée"><span className="tnum">{fmtDuration(ms)}</span>{live && <span className="ml-2 text-xs text-accent">en cours</span>}</Meta>
+          <Meta label="Durée"><span className="tnum">{fmtDuration(ms)}</span>{live && <span className="ml-2 text-xs text-accent">{t.waiting_question_id?"en attente":"en cours"}</span>}</Meta>
           <Meta label="Coût déclaré"><span className="tnum">{t.cost ? fmtUsd(t.cost) : "—"}</span></Meta>
           <Meta label="Branche">{t.branch ? <span className="flex items-center gap-1.5 font-mono text-[13px]"><GitBranch className="size-3.5 text-muted" aria-hidden />{t.branch}</span> : "—"}</Meta>
           <Meta label="Fichiers modifiés"><span className="tnum">{files.length || "—"}</span></Meta>

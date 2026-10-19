@@ -1,6 +1,8 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
+import { Tabs } from "../../components/ui/Tabs";
+import { ScaffoldForm } from "./ScaffoldForm";
 import { Button } from "../../components/ui/Button";
 import { Field, Input, Select, Textarea } from "../../components/ui/Field";
 import { FormError } from "../../components/ui/Feedback";
@@ -14,6 +16,7 @@ import type { Project } from "../../lib/types";
 /** Création et modification d'un projet : le même formulaire, les mêmes règles que le serveur (qui reste seul juge). */
 export function ProjectForm({ project, onDone, onCancel }: { project?: Project; onDone: (p: Project) => void; onCancel: () => void }) {
   const { orgId } = useOrg();
+  const [mode, setMode] = useState<"repo" | "idea">("repo");
   const secrets = useQuery(secretsQuery(orgId));
   const gitSecrets = secrets.data?.filter((s) => s.kind === "git_token") ?? [];
   const [name, setName] = useState(project?.name ?? "");
@@ -40,17 +43,20 @@ export function ProjectForm({ project, onDone, onCancel }: { project?: Project; 
     onSuccess: (p) => { invalidateOrg(orgId, "projects"); invalidateOrg(orgId, "secrets"); onDone(p); },
   });
 
+  const modes = !project ? <Tabs value={mode} onChange={setMode} label="Créer un projet" items={[{value:"repo",label:"Importer un dépôt"},{value:"idea",label:"Depuis une idée"}]} /> : null;
+  if (mode === "idea" && !project) return <div className="grid gap-5">{modes}<ScaffoldForm onDone={onDone} onCancel={onCancel}/></div>;
+
   return (
-    <form onSubmit={(e) => { e.preventDefault(); save.mutate(); }} className="grid gap-4">
+    <div className="grid gap-5">{modes}<form onSubmit={(e) => { e.preventDefault(); save.mutate(); }} className="grid gap-4">
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Nom affiché">{(id) => <Input id={id} value={name} maxLength={80} required autoFocus onChange={(e) => { setName(e.target.value); if (!slugTouched) setSlug(slugify(e.target.value)); }} />}</Field>
         <Field label="Identifiant" hint="Minuscules, chiffres et tirets.">{(id) => <Input id={id} value={slug} required pattern="[a-z0-9][a-z0-9\-]{0,39}" onChange={(e) => { setSlug(e.target.value); setSlugTouched(true); }} className="font-mono text-[13px]" />}</Field>
       </div>
-      <Field label="Dépôt git" hint="URL https, sans identifiants : le jeton se règle plus bas.">{(id) => <Input id={id} type="text" inputMode="url" autoCapitalize="off" spellCheck={false} value={repo} required placeholder="https://gitlab.exemple.fr/equipe/projet.git" onChange={(e) => setRepo(e.target.value)} className="font-mono text-[13px]" />}</Field>
+      <Field label="Dépôt git" hint="URL https, sans identifiants : le jeton se règle plus bas.">{(id) => <Input id={id} type="text" inputMode="url" autoCapitalize="off" spellCheck={false} value={repo} readOnly={!!project?.managed} required placeholder="https://gitlab.exemple.fr/equipe/projet.git" onChange={(e) => setRepo(e.target.value)} className="font-mono text-[13px]" />}</Field>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Branche de base">{(id) => <Input id={id} value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="main" className="font-mono text-[13px]" />}</Field>
         <Field label="Forge" hint="Laisse « Automatique » pour la déduire de l'URL.">
-          {(id) => <Select id={id} value={forge} onChange={(e) => setForge(e.target.value)}><option value="">Automatique</option>{Object.entries(FORGE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select>}
+          {(id) => <Select id={id} value={forge} disabled={!!project?.managed} onChange={(e) => setForge(e.target.value)}><option value="">Automatique</option>{Object.entries(FORGE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select>}
         </Field>
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
@@ -64,10 +70,10 @@ export function ProjectForm({ project, onDone, onCancel }: { project?: Project; 
         {(id) => <Textarea id={id} rows={3} value={paths} onChange={(e) => setPaths(e.target.value)} placeholder={"db/\n.gitlab-ci.yml"} className="min-h-0 font-mono text-[13px]" />}
       </Field>
       <Field label="Jeton git" hint={<>Utilisé pour cloner, pousser et ouvrir la demande de fusion. <Link to="/o/$orgId/integrations" params={{ orgId }} className="font-medium text-accent hover:underline">Gérer les secrets</Link></>}>
-        {(id) => <Select id={id} value={secret} onChange={(e) => setSecret(e.target.value)}><option value="">Aucun (dépôt public ou local)</option>{gitSecrets.map((s) => <option key={s.id} value={s.id}>{s.label} {s.hint}</option>)}</Select>}
+        {(id) => <Select id={id} value={secret} disabled={!!project?.managed} onChange={(e) => setSecret(e.target.value)}><option value="">Aucun (dépôt public ou local)</option>{gitSecrets.map((s) => <option key={s.id} value={s.id}>{s.label} {s.hint}</option>)}</Select>}
       </Field>
       <FormError error={save.error} />
       <div className="flex justify-end gap-2"><Button onClick={onCancel}>Annuler</Button><Button variant="primary" type="submit" loading={save.isPending}>{project ? "Enregistrer" : "Créer le projet"}</Button></div>
-    </form>
+    </form></div>
   );
 }

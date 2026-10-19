@@ -21,9 +21,19 @@ services:
       PROJECTS_JSON: ${PROJECTS_JSON:-}      # ou un fichier /data/projects.json
       ATELIER_MASTER_KEY: ${ATELIER_MASTER_KEY:-}            # base64 de 32 octets ; sinon générée dans le volume data
       ATELIER_ALLOW_LOCAL_REPOS: ${ATELIER_ALLOW_LOCAL_REPOS:-}  # 1 : accepte des dépôts locaux (tests/démo seulement)
+      ATELIER_GIT_ALLOW_PRIVATE: ${ATELIER_GIT_ALLOW_PRIVATE:-}
       ATELIER_GIT_HOSTS: ${ATELIER_GIT_HOSTS:-}              # liste blanche d'hôtes git (vide = tous)
       PROXY_URL: http://${ATELIER_CONTAINER:-atelier-orchestrator}:8081
       SANDBOX_NETWORK: ${ATELIER_SANDBOX_NET:-atelier-sandbox}
+      ATELIER_APPS_SUBNET_POOL: ${ATELIER_APPS_SUBNET_POOL:-10.240.0.0/16}
+      ATELIER_APPS_DOMAIN: ${ATELIER_APPS_DOMAIN:-}
+      ATELIER_APPS_PUBLIC_PORT: ${ATELIER_APPS_PUBLIC_PORT:-}
+      ATELIER_APPS_SCHEME: ${ATELIER_APPS_SCHEME:-https}
+      ATELIER_OIDC_ISSUER: ${ATELIER_OIDC_ISSUER:-}
+      ATELIER_OIDC_CLIENT_ID: ${ATELIER_OIDC_CLIENT_ID:-}
+      ATELIER_OIDC_CLIENT_SECRET: ${ATELIER_OIDC_CLIENT_SECRET:-}
+      ATELIER_PUBLIC_URL: ${ATELIER_PUBLIC_URL:-}
+      ATELIER_PUSH_SUBJECT: ${ATELIER_PUSH_SUBJECT:-mailto:admin@atelier.local}
       ATELIER_WORKDIR: ${ATELIER_WORKDIR:-/srv/atelier/work}
       ATELIER_FAKE_AGENT: ${ATELIER_FAKE_AGENT:-}
       ATELIER_HEALTH_ALLOW_PRIVATE: ${ATELIER_HEALTH_ALLOW_PRIVATE:-}  # 1 : la surveillance peut viser le réseau privé (jamais les métadonnées cloud)
@@ -36,6 +46,7 @@ services:
       - data:/data
     ports:
       - "${ATELIER_PORT:-8080}:8080"
+      - "${ATELIER_APPS_BIND:-127.0.0.1}:${ATELIER_APPS_PORT:-8082}:8082"
     networks: [default, sandbox]
 
   # Construit l'image du bac à sable (l'orchestrateur la lance ensuite à la demande) puis s'arrête.

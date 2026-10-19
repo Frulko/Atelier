@@ -17,6 +17,11 @@ ATELIER_WORKDIR=$S/work
 ATELIER_PORT=18080
 ATELIER_CONTAINER=atelier-smoke-orchestrator
 ATELIER_SANDBOX_NET=atelier-smoke-net
+ATELIER_APPS_DOMAIN=apps.localhost
+ATELIER_APPS_SCHEME=http
+ATELIER_APPS_PORT=18082
+ATELIER_APPS_PUBLIC_PORT=18082
+ATELIER_PUBLIC_URL=http://localhost:18080
 ATELIER_ALLOW_LOCAL_REPOS=1
 ATELIER_HEALTH_ALLOW_PRIVATE=1
 FIXTURES_DIR=$S/fixtures
@@ -24,7 +29,7 @@ PROJECTS_JSON='$(tr -d '\n' < fixtures/projects.json)'
 ENV
 
 DC="docker compose -p atelier-smoke --env-file $S/.env -f docker-compose.yml -f docker-compose.fixtures.yml"
-trap '$DC down -v >/dev/null 2>&1 || true' EXIT
+trap 'docker ps -aq --filter label=atelier-app-owner=atelier-smoke-net | xargs -r docker rm -f >/dev/null 2>&1 || true; $DC down -v >/dev/null 2>&1 || true; docker network ls -q --filter label=atelier-app-owner=atelier-smoke-net | xargs -r docker network rm >/dev/null 2>&1 || true' EXIT
 $DC up -d --build >/dev/null
 for i in $(seq 30); do curl -sf localhost:18080/healthz >/dev/null && break; sleep 1; done
 
@@ -48,7 +53,7 @@ O=$U/api/orgs/$ORG
 grep -q HttpOnly "$S/jar" || fail "cookie sans HttpOnly"
 
 # Les projets sont en base (importés de la config au 1er démarrage) : on retrouve l'identifiant par le slug.
-pid() { curl -sf "${A[@]}" $O/projects | grep -o '"id":"[0-9a-f]*","slug":"'"$1"'"' | sed 's/"id":"\([0-9a-f]*\)".*/\1/'; }
+pid() { curl -sf "${A[@]}" $O/projects | python3 -c 'import json,sys; print(next(p["id"] for p in json.load(sys.stdin) if p["slug"]==sys.argv[1]))' "$1"; }
 [ "$(curl -sf "${A[@]}" $O/projects | grep -o '"slug"' | wc -l | tr -d ' ')" = 3 ] || fail "les 3 projets de la config n'ont pas été importés"
 
 # 2. CSRF : même avec un cookie valide, un POST venu d'une autre origine est refusé
@@ -95,6 +100,27 @@ grep -q check_failed <<<"$EV" || fail "aucun échec de vérification enregistré
 ! show todo-api "$ID" casse.js >/dev/null 2>&1 || fail "le fichier invalide est resté dans la branche"
 show todo-api "$ID" NOTES.md | grep -q "casse le projet" || fail "le changement valide a disparu après la correction"
 
+# Cancellation during a check must never push the agent's already-written changes.
+CP=$(pid todo-api)
+OLD_CHECK=$(curl -sf "${A[@]}" $O/projects | python3 -c 'import json,sys;print(json.dumps({"check":next(p["check"] for p in json.load(sys.stdin) if p["slug"]=="todo-api")}))')
+curl -sf "${A[@]}" -X PATCH $O/projects/$CP -d '{"check":"sleep 10"}' >/dev/null || fail "configuration du contrôle lent refusée"
+CANCEL_ID=$(submit todo-api "annuler pendant le contrôle")
+CHECK_STARTED=0
+for _ in $(seq 60); do
+  if [ -n "$(docker ps -q --filter "name=^/atelier-${CANCEL_ID}-check1$")" ]; then CHECK_STARTED=1; break; fi
+  sleep 1
+done
+[ "$CHECK_STARTED" = 1 ] || fail "le contrôle à annuler n'a pas démarré"
+curl -sf "${A[@]}" $O/tasks/$CANCEL_ID/cancel -d '{}' >/dev/null || fail "annulation refusée"
+for _ in $(seq 20); do
+  CSTATE=$(curl -sf "${A[@]}" $O/tasks/$CANCEL_ID | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"])')
+  [ "$CSTATE" = cancelled ] && break
+  sleep 1
+done
+[ "$CSTATE" = cancelled ] || fail "la tâche n'a pas été annulée"
+if git --git-dir="$S/fixtures/todo-api.git" show-ref --verify --quiet "refs/heads/atelier/$CANCEL_ID"; then fail "la tâche annulée a poussé sa branche"; fi
+curl -sf "${A[@]}" -X PATCH $O/projects/$CP -d "$OLD_CHECK" >/dev/null || fail "restauration de la vérification refusée"
+
 # 3b. Éditeur : une session privée, un brouillon, la vérification dans le bac à sable, puis un commit sur une branche
 ED=$(curl -sf "${A[@]}" $O/editor/sessions -d "{\"projectId\":\"$(pid todo-api)\"}")
 EID=$(sed 's/.*"id":"\([0-9a-f]*\)".*/\1/' <<<"$ED"); EBR=$(sed 's/.*"branch":"\([^"]*\)".*/\1/' <<<"$ED")
@@ -120,6 +146,55 @@ curl -sf -b "$S/jar5" $U/api/me | grep -q '"role":"member"' || fail "le nouveau 
 [ "$(code "${J[@]}" $U/api/auth/accept-invite -d "$AB")" = 404 ] || fail "le lien d'invitation a servi deux fois"
 [ "$(code -b "$S/jar5" $O/members)" = 403 ] || fail "un membre peut lister les membres"
 [ "$(code -b "$S/jar5" $O/tasks)" = 200 ] || fail "le nouveau membre ne voit pas les tâches"
+
+# 4c. New project -> immutable preview -> publish -> second version -> rollback.
+PROJECT=$(curl -sf "${A[@]}" $O/projects/scaffold -d '{"name":"Publication smoke","slug":"publication-smoke","template":"static"}')
+PP=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["project"]["id"])' <<<"$PROJECT")
+release() { curl -sf "${A[@]}" $O/projects/$PP/releases -d '{}'; }
+wait_release() {
+  for _ in $(seq 90); do
+    R=$(curl -sf "${A[@]}" $O/releases/$1)
+    RS=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["state"])' <<<"$R")
+    [ "$RS" = queued ] || [ "$RS" = building ] || break
+    sleep 1
+  done
+  [ "$RS" = ready ] || { echo "$R"; fail "aperçu indisponible : $RS"; }
+}
+RID=$(release | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+wait_release "$RID"
+[ "$(code -H "Host: $RID.apps.localhost" localhost:18082/)" = 401 ] || fail "aperçu accessible sans autorisation"
+ACCESS=$(curl -sf "${A[@]}" $O/releases/$RID/access -d '{}')
+curl -sf -D "$S/preview-headers" -H 'content-type: application/json' -H 'Origin: http://localhost:18080' -H "Host: $RID.apps.localhost" localhost:18082/.atelier/access -d "$ACCESS" >/dev/null || fail "autorisation d'aperçu refusée"
+# curl does not accept Secure cookies on the *.localhost HTTP test origin; the UI test checks the browser behavior.
+python3 -c 'from pathlib import Path; import sys; h=Path(sys.argv[1]).read_text(); c=next(x.split(":",1)[1].strip().split(";")[0] for x in h.splitlines() if x.lower().startswith("set-cookie:")); Path(sys.argv[2]).write_text("Cookie: "+c+"\n"); Path(sys.argv[2]).chmod(0o600)' "$S/preview-headers" "$S/preview-cookie"
+[ "$(code -H @"$S/preview-cookie" -H "Host: $RID.apps.localhost" localhost:18082/)" = 200 ] || fail "aperçu autorisé indisponible"
+[ "$(code -H @"$S/preview-cookie" -H "Host: $RID.apps.localhost" localhost:18082/.env)" = 404 ] || fail "fichier sensible accessible"
+curl -sf "${A[@]}" $O/releases/$RID/desktop.png -o "$S/desktop.png" || fail "capture bureau absente"
+curl -sf "${A[@]}" $O/releases/$RID/mobile.png -o "$S/mobile.png" || fail "capture mobile absente"
+curl -sf "${A[@]}" $O/releases/$RID/publish -d '{"reviewed":true}' >/dev/null || fail "publication refusée"
+[ "$(code -H "Host: p-$PP.apps.localhost" localhost:18082/)" = 200 ] || fail "production indisponible"
+RID2=$(release | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+wait_release "$RID2"
+curl -sf "${A[@]}" $O/releases/$RID2/publish -d '{"reviewed":true}' >/dev/null || fail "deuxième publication refusée"
+curl -sf "${A[@]}" $O/releases/$RID/rollback -d '{}' >/dev/null || fail "restauration refusée"
+[ "$(code -H "Host: p-$PP.apps.localhost" localhost:18082/)" = 200 ] || fail "restauration indisponible"
+# The React starter exercises the real npm proxy and a real Vite build (still no model call).
+REACT=$(curl -sf "${A[@]}" $O/projects/scaffold -d '{"name":"React smoke","slug":"react-smoke","template":"react"}')
+RP=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["project"]["id"])' <<<"$REACT")
+RR=$(curl -sf "${A[@]}" $O/projects/$RP/releases -d '{}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+wait_release "$RR"
+
+# A scheduled run starts without a browser and stores its result in the inbox.
+AUTO_BODY=$(python3 -c 'import json,sys; print(json.dumps({"name":"Smoke autonome","project_id":sys.argv[1],"prompt":"ajoute une note autonome","kind":"autonomous","interval_minutes":5,"max_runs_day":1}))' "$PP")
+AUTO=$(curl -sf "${A[@]}" $O/automations -d "$AUTO_BODY" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+TRIGGER=$(curl -sf "${A[@]}" $O/automations/$AUTO/run -d '{}')
+TID=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["taskId"])' <<<"$TRIGGER")
+wait_done "$TID"
+curl -sf "${A[@]}" $U/api/me/notifications | grep -q 'La proposition est prête' || fail "notification absente"
+curl -sf "${A[@]}" -X PATCH $O/automations/$AUTO -d '{"enabled":false}' >/dev/null
+
+node scripts/app-check.mjs || fail "les services applicatifs ou leur isolation échouent"
+node scripts/governance-check.mjs || fail "le budget ou la reprise humaine échoue"
 
 # 4c. Interface web pilotée dans un vrai navigateur (si Playwright est installé : pip install playwright)
 if python3 -c "import playwright" 2>/dev/null; then

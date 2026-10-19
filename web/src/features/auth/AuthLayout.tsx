@@ -10,7 +10,7 @@ export function AuthLayout({ title, subtitle, children }: { title: string; subti
         <div className="relative z-10">
           <p className="label">Une plateforme, un garde-fou</p>
           <h2 className="font-display mt-4 max-w-md text-[3rem] leading-[1.05]">Demande. L'agent propose. <em className="text-accent not-italic">Tu valides.</em></h2>
-          <p className="mt-6 max-w-sm text-[15px] leading-relaxed text-side-muted">Chaque modification passe par un bac à sable jetable, sans secret ni Internet, puis arrive en proposition à relire. Rien n'est livré sans un humain.</p>
+          <p className="mt-6 max-w-sm text-[15px] leading-relaxed text-side-muted">Chaque modification passe par un bac à sable jetable, sans secret ni Internet, puis arrive en proposition à relire. Les publications suivent les validations définies par ton équipe.</p>
         </div>
         <ul className="relative z-10 grid gap-2.5 text-sm text-side-muted">
           {["clone du projet", "agent dans un bac à sable", "vérification automatique", "merge request à relire"].map((s, i) => (

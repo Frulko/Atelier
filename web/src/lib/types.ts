@@ -5,7 +5,9 @@ export interface OrgRef { id: string; name: string; role: Role }
 export interface Me { user: { id: string; email: string; name: string | null }; orgs: OrgRef[] }
 
 export interface Task {
+  waiting_question_id?:string|null;
   id: string; org_id: string; user_id: string | null; project: string; project_name: string | null; user_email: string | null;
+  last_error?: string | null; pushed_sha?: string | null; automation_id?: string | null;
   prompt: string; status: Status; branch: string | null; mr_url: string | null; cost: number;
   created_at: number; started_at: number | null; finished_at: number | null; files_json: string | null; flagged: number; turn: number; followup: string | null;
 }
@@ -14,6 +16,8 @@ export interface TaskEvent { id: number; task_id: string; ts: number; type: stri
 export interface TaskFilters { status?: string; project?: string; user?: string; q?: string; from?: number; to?: number }
 
 export interface Project {
+  budgetUsdDay?:number|null; budgetTimezone?:string; subagentModel?:string|null;
+  managed?: boolean; runtime?: Runtime | null;
   id: string; slug: string; name: string; repo: string; branch: string; forge: "gitlab" | "github" | "none";
   check: string; engine: string; protectedPaths: string[]; gitSecretId: string | null;
   siteUrl: string | null; healthUrl: string | null;
@@ -44,7 +48,7 @@ export interface Usage {
   chat: { input: number; output: number; replies: number };
   budget: { capUsd: number | null; monthSpendUsd: number; projectedMonthUsd: number };
 }
-export interface OrgDetail { id: string; name: string; budgetUsdMonth: number | null; monthSpendUsd: number; chat: { provider: string; model: string; providers: string[] } }
+export interface OrgDetail { agentModel?:string; subagentModel?:string; id: string; name: string; budgetUsdMonth: number | null; monthSpendUsd: number; chat: { provider: string; model: string; providers: string[]; inputUsdPerMillion: number | null; outputUsdPerMillion: number | null } }
 
 export interface AuditItem {
   id: number; ts: number; action: string; userId: string | null; userEmail: string | null;
@@ -83,4 +87,18 @@ export interface ProjectStatus {
   git: { checkedAt: number; error: string | null; commit: { sha: string; subject: string; author: string; at: number } | null } | null;
   deploy: { environment: string; status: string; ref: string | null; sha: string | null; at: number; url: string | null } | null;
   lastTask: { id: string; status: Status; mr_url: string | null; created_at: number; finished_at: number | null } | null;
+}
+
+export interface Automation {
+  id: string; org_id: string; project_id: string; project_name?: string; user_id: string; name: string; prompt: string;
+  kind: "cron" | "autonomous"; cron: string | null; timezone: string; interval_minutes: number;
+  max_runs_day: number; enabled: number; next_run_at: number; last_task_id: string | null; last_error: string | null;
+}
+export interface AppNotification { id: number; orgId: string; title: string; body: string; url: string; createdAt: number; readAt: number | null }
+export interface Runtime { build: string; output: string; start: string; policy: "manual" | "approved" | "automatic"; preview: boolean }
+export interface Release {
+  id: string; org_id: string; project_id: string; task_id: string | null; sha: string | null; ref: string;
+  state: "queued" | "building" | "ready" | "failed" | "stopped"; error: string | null; check_ok: number; qa_ok: number;
+  created_at: number; published_at: number | null; expires_at: number | null; log: string;
+  url: string | null; productionUrl: string | null; published: boolean;
 }

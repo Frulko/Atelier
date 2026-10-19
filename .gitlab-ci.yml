@@ -1,0 +1,89 @@
+# GitLab auto-hébergé : voir docs/gitlab-portainer.md.
+# Les contrôles Node tournent sur un runner Docker ordinaire ; les tests Docker
+# utilisent un runner Shell protégé, dédié, distinct du serveur de production.
+stages: [check, integration, publish, deploy]
+
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS && $CI_PIPELINE_SOURCE == "push"'
+      when: never
+    - if: '$CI_COMMIT_BRANCH || $CI_COMMIT_TAG'
+
+variables:
+  PLATFORMS: linux/amd64
+
+checks:
+  stage: check
+  image: node:24-bookworm
+  script:
+    - npm --prefix orchestrator ci --no-audit --no-fund
+    - npm --prefix orchestrator run check
+    - npm --prefix orchestrator test
+    - npm --prefix web ci --no-audit --no-fund
+    - npm --prefix web run check
+    - npm --prefix web test
+    - npm --prefix web run build
+    - node --test scripts/deploy-portainer.test.mjs
+
+.docker-host:
+  tags: [atelier-docker]
+  resource_group: atelier-docker
+  timeout: 45m
+  rules:
+    - if: '$CI_COMMIT_REF_PROTECTED == "true" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - if: '$CI_COMMIT_REF_PROTECTED == "true" && $CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/'
+
+integration:
+  extends: .docker-host
+  stage: integration
+  script:
+    - export PATH="/opt/atelier-ci/bin:$PATH"
+    - node -e 'if (Number(process.versions.node.split(".")[0]) < 24) process.exit(1)'
+    - python3 -c 'import playwright'
+    - docker compose version
+    - ./scripts/smoke.sh
+    - ./scripts/prod-test.sh
+  after_script:
+    # Les faux dépôts reçoivent des écritures root : rendre le dossier au runner.
+    - >-
+      if [ -d "$CI_PROJECT_DIR/.smoke" ] && docker image inspect atelier-sandbox:latest >/dev/null 2>&1; then
+        docker run --rm --network none --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE
+        --security-opt no-new-privileges --user 0 --entrypoint chown
+        -v "$CI_PROJECT_DIR/.smoke:/cleanup" atelier-sandbox:latest
+        -R "$(id -u):$(id -g)" /cleanup;
+      fi
+
+images:
+  extends: .docker-host
+  stage: publish
+  script:
+    - |
+      set -euo pipefail
+      export DOCKER_CONFIG="$(mktemp -d)"
+      trap 'rm -rf "$DOCKER_CONFIG"' EXIT
+      printf '%s' "$CI_REGISTRY_PASSWORD" | docker login "$CI_REGISTRY" --username "$CI_REGISTRY_USER" --password-stdin
+      VERSION="$CI_COMMIT_SHA"
+      if [ -n "${CI_COMMIT_TAG:-}" ]; then VERSION="${CI_COMMIT_TAG#v}"; fi
+      ./scripts/release.sh "$CI_REGISTRY_IMAGE/atelier" "$VERSION" --push
+      printf 'ATELIER_RELEASE=%s\n' "$VERSION" > deployment.env
+  artifacts:
+    reports:
+      dotenv: deployment.env
+
+# Facultatif : webhook de stack Web editor (Portainer BE). Absent sans variable.
+# Un tag protégé propose le déploiement ; ATELIER_AUTO_DEPLOY=1 le rend automatique.
+deploy-portainer:
+  stage: deploy
+  image: node:24-bookworm
+  needs: [images]
+  resource_group: atelier-production
+  environment:
+    name: production
+  script:
+    - node scripts/deploy-portainer.mjs
+  rules:
+    - if: '$CI_COMMIT_REF_PROTECTED == "true" && $CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/ && $PORTAINER_STACK_WEBHOOK && $ATELIER_AUTO_DEPLOY == "1"'
+    - if: '$CI_COMMIT_REF_PROTECTED == "true" && $CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/ && $PORTAINER_STACK_WEBHOOK'
+      when: manual
+      allow_failure: true

@@ -33,13 +33,13 @@ export function userFromToken(token: string | undefined, now = Date.now()) {
 export const endSession = (token: string) => db.deleteSession(hash(token));
 export const endOtherSessions = (userId: string, keepToken: string) => db.deleteSessionsOf(userId, hash(keepToken));
 
-export function tokenFromCookie(header: string | undefined): string | undefined {
+export function tokenFromCookie(header: string | undefined, secure = false): string | undefined {
   for (const part of (header ?? "").split(";")) {
     const [k, ...v] = part.trim().split("=");
-    if (k === COOKIE) return v.join("=");
+    if (k === (secure ? `__Host-${COOKIE}` : COOKIE)) return v.join("=");
   }
 }
 
 export function cookieHeader(token: string, secure: boolean, maxAgeS = SESSION_TTL_MS / 1000) {
-  return `${COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAgeS}${secure ? "; Secure" : ""}`;
+  return `${secure ? `__Host-${COOKIE}` : COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAgeS}${secure ? "; Secure" : ""}`;
 }

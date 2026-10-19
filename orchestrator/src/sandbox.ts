@@ -1,11 +1,12 @@
 import { spawn, execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { issueTaskToken, resolveTaskToken, revokeTaskTokens } from "./tokens.ts";
 import { cfg } from "./config.ts";
 
 const run = promisify(execFile);
 
-const HARDENING = [
-  "--user", "1000:1000", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+export const HARDENING = [
+  "--dns", "127.0.0.1", "--user", "1000:1000", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
   "--memory", "1g", "--cpus", "1", "--pids-limit", "512",
 ];
 
@@ -15,19 +16,23 @@ export function runAgent(opts: {
   /** Connaissances de l'équipe (Markdown), données à l'agent comme contexte ; vide si aucune. */
   knowledge?: string;
   /** Réglages du projet : instructions de l'équipe, modèle, tours maximum, budget par exécution. */
-  instructions?: string; model?: string; maxTurns?: number; budgetUsd?: number;
+  instructions?: string; model?: string; subagentModel?: string; maxTurns?: number; budgetUsd?: number;
   /** Jeton de tâche : tient lieu de clé d'API dans le bac à sable (voir tokens.ts). */
   token: string;
   onEvent: (e: { type: string; text?: string; name?: string; detail?: string; ok?: boolean; cost?: number }) => void;
-}): Promise<{ ok: boolean; cost: number }> {
+}): Promise<{ ok: boolean; cost: number; reported:boolean; waiting?:string }> {
   const args = [
-    "run", "--rm", "--name", opts.name, "--label", "atelier=1",
+    "run", "--rm", "--name", opts.name, "--label", "atelier=1", "--label", `atelier-owner=${cfg.sandboxNetwork}`,
     "--network", cfg.sandboxNetwork, ...HARDENING,
     "-v", `${opts.tree}:/work`,
     "-e", "TASK_PROMPT",
+    "-e", `ATELIER_HUMAN_URL=${cfg.proxyUrl}/human/questions`,
+    "-e", "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH=1",
+    "-e", "CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS=2",
     "-e", "TASK_KNOWLEDGE",
     "-e", "TASK_INSTRUCTIONS",
     ...(opts.model ? ["-e", `ATELIER_MODEL=${opts.model}`] : []),
+    ...(opts.subagentModel ? ["-e", `CLAUDE_CODE_SUBAGENT_MODEL=${opts.subagentModel}`, "-e", "CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1"] : []),
     ...(opts.maxTurns ? ["-e", `MAX_TURNS=${opts.maxTurns}`] : []),
     "-e", `ATELIER_ENGINE=${opts.engine}`,
     // Un préfixe par fournisseur : le proxy choisit l'amont et injecte la vraie clé.
@@ -48,17 +53,19 @@ export function runAgent(opts: {
     for (const k of ["DOCKER_HOST", "DOCKER_CONFIG", "DOCKER_CONTEXT"]) if (process.env[k]) env[k] = process.env[k];
     const p = spawn("docker", args, { env });
     const timer = setTimeout(() => { opts.onEvent({ type: "error", text: "Délai dépassé, agent arrêté." }); kill(opts.name); }, cfg.agentTimeoutS * 1000);
-    let ok = false, cost = 0, buf = "";
+    let ok = false, cost = 0, reported=false, waiting:string|undefined, buf = "";
     const line = (l: string) => {
       try {
         const e = JSON.parse(l);
-        if (e.type === "result") { ok = !!e.ok; cost = e.cost ?? 0; }
+        if(e.type==="human_wait")waiting=e.questionId;
+        if (e.type === "result") { reported=typeof e.cost === "number" && Number.isFinite(e.cost) && e.cost>=0; ok = !!e.ok; cost = typeof e.cost === "number" && Number.isFinite(e.cost) && e.cost >= 0 ? e.cost : 0; }
         opts.onEvent(e);
       } catch { if (l.trim()) opts.onEvent({ type: "log", text: l }); }
     };
     p.stdout.on("data", (d) => { buf += d; const ls = buf.split("\n"); buf = ls.pop()!; ls.forEach(line); });
     p.stderr.on("data", (d) => opts.onEvent({ type: "log", text: String(d).trim() }));
-    p.on("close", () => { clearTimeout(timer); if (buf) line(buf); resolve({ ok, cost }); });
+    p.on("error", () => { clearTimeout(timer); resolve({ ok: false, cost, reported, waiting }); });
+    p.on("close", (code) => { ok = ok && code === 0; clearTimeout(timer); if (buf) line(buf); resolve({ ok, cost, reported, waiting }); });
   });
 }
 
@@ -66,13 +73,33 @@ export function runAgent(opts: {
 export async function runCheck(name: string, tree: string, command: string): Promise<{ ok: boolean; output: string }> {
   try {
     const { stdout, stderr } = await run("docker", [
-      "run", "--rm", "--name", name, "--label", "atelier=1", "--network", "none", ...HARDENING,
+      "run", "--rm", "--name", name, "--label", "atelier=1", "--label", `atelier-owner=${cfg.sandboxNetwork}`, "--network", "none", ...HARDENING,
       "-v", `${tree}:/work`, "--entrypoint", "sh", cfg.sandboxImage, "-c", command,
     ], { timeout: 300_000, maxBuffer: 5e6 });
     return { ok: true, output: (stdout + stderr).slice(-3000) };
   } catch (e: any) {
+    await kill(name);
     return { ok: false, output: String((e.stdout ?? "") + (e.stderr ?? "") || e.message).slice(-3000) };
   }
 }
 
 export const kill = (name: string) => run("docker", ["kill", name]).catch(() => {});
+
+export async function installDependencies(name: string, tree: string, token: string): Promise<void> {
+  const context=resolveTaskToken(token);
+  if(!context)throw new Error("Jeton d'installation expiré.");
+  const registryToken=issueTaskToken(name,context.orgId,"npm");
+  try {
+    await run("docker", ["run", "--rm", "--name", name, "--label", "atelier=1", "--label", `atelier-owner=${cfg.sandboxNetwork}`, "--network", cfg.sandboxNetwork, ...HARDENING,
+      "-v", `${tree}:/work`, "-e", "ATELIER_NPM_TOKEN", "-e", `ATELIER_NPM_REGISTRY=${cfg.proxyUrl}/npm/`,
+      "--entrypoint", "node", cfg.sandboxImage, "/opt/runner/install.mjs"],
+      { env: { PATH: process.env.PATH, HOME: process.env.HOME, ATELIER_NPM_TOKEN: registryToken, ...Object.fromEntries(["DOCKER_HOST", "DOCKER_CONFIG", "DOCKER_CONTEXT"].filter(k => process.env[k]).map(k => [k, process.env[k]])) }, timeout: 260_000, maxBuffer: 5e6 });
+  } catch { await kill(name); throw new Error("Installation des dépendances impossible. Les paquets doivent venir du registre npm ; les scripts d'installation sont désactivés."); }
+  finally { revokeTaskTokens(name); }
+}
+
+export async function stopOrphanContainers() {
+  const { stdout } = await run("docker", ["ps", "-aq", "--filter", `label=atelier-owner=${cfg.sandboxNetwork}`]);
+  const ids = stdout.trim().split(/\s+/).filter(Boolean);
+  if (ids.length) await run("docker", ["rm", "-f", ...ids]);
+}

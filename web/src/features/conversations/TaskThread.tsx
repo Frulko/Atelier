@@ -1,3 +1,5 @@
+import { HumanQuestions } from "../human/HumanDecisions";
+import { PreviewPanel } from "../releases/ReleasesPage";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { ExternalLink, GitBranch } from "lucide-react";
@@ -39,16 +41,16 @@ export function TaskThread({ detail }: { detail: ConversationDetail }) {
 
   const users = messages.filter((m) => m.role === "user");
   const turnOf = (e: { turn?: number }) => e.turn ?? 1;
-  const reason = !t ? "" : live ? "L'agent travaille : tu pourras demander un ajustement à la fin de ce tour."
+  const reason = !t ? "" : live ? (t.waiting_question_id?"En attente du technicien : le travail est sauvegardé.":"L'agent travaille : tu pourras demander un ajustement à la fin de ce tour.")
     : t.status !== "done" ? "Cette tâche n'a pas de proposition à ajuster : lance une nouvelle tâche."
     : !canFollowUp ? "Seule la personne qui a lancé la tâche, ou un administrateur, peut demander un ajustement."
     : (t.turn ?? 1) >= 10 ? "Limite de 10 tours atteinte : lance une nouvelle tâche." : "";
 
   return (
-    <div className="grid gap-4">
-      {t && (
+    <div className={c.projectId ? "grid items-start gap-5 2xl:grid-cols-2" : ""}><div className="grid gap-4">
+      <HumanQuestions taskId={taskId}/>{t && (
         <Card className="flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3 text-sm">
-          <Badge tone={STATUS_TONE[t.status]}>{STATUS_LABEL[t.status]}</Badge>
+          <Badge tone={STATUS_TONE[t.status]}>{t.waiting_question_id?"En attente du technicien":STATUS_LABEL[t.status]}</Badge>
           {t.branch && <span className="flex items-center gap-1.5 font-mono text-[13px]"><GitBranch className="size-3.5 text-muted" aria-hidden />{t.branch}</span>}
           {t.mr_url && <a href={t.mr_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 font-medium text-accent hover:underline">Demande de fusion <ExternalLink className="size-3.5" aria-hidden /></a>}
           <span className="text-muted">Coût déclaré : <span className="tnum text-ink">{t.cost ? fmtUsd(t.cost) : "—"}</span></span>
@@ -84,6 +86,7 @@ export function TaskThread({ detail }: { detail: ConversationDetail }) {
         </PromptInputFooter>
       </PromptInput>
       <FormError error={send.error} />
-    </div>
+      {t?.last_error && <p role="alert" className="rounded-lg bg-warn-soft p-3 text-sm text-warn">Le dernier tour a échoué : {t.last_error}. La proposition précédente est conservée.</p>}
+    </div>{c.projectId && <PreviewPanel projectId={c.projectId} taskId={taskId}/>}</div>
   );
 }

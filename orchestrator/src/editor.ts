@@ -5,8 +5,9 @@ import {
   allEditorSessionIds, countEditorSessions, setEditorMr, updateTask, deleteEditorSession, findEditorSession, getProjectById, getTaskInOrg, idleEditorSessions,
   insertEditorSession, touchEditorSession, type EditorSession, type ProjectRow,
 } from "./db.ts";
-import { clone, cleanup, commitAs, openMergeRequest, patchOf, pushBranch, stagedChanges, workspace, type Change } from "./git.ts";
+import { clone, cleanup, commitAs, openMergeRequest, patchOf, pushBranch, stagedChanges, workspace, revision, type Change } from "./git.ts";
 import { runCheck } from "./sandbox.ts";
+import { assertSafeFiles } from "./security.ts";
 import { rowToProject } from "./projects.ts";
 
 // Limites : l'éditeur écrit sur le disque du serveur à la demande d'un navigateur, donc tout est borné.
@@ -265,6 +266,11 @@ export async function commitSession(s: EditorSession, user: { name: string | nul
   const changes = await stagedChanges(ws);
   if (!changes.length) throw new EditorError(409, "aucune modification à valider");
   const flagged = protectedHit(project, changes);
+  if (project.check_cmd.trim() && project.check_cmd.trim() !== "true") {
+    const check = await runSessionCheck(s);
+    if (!check.ok) throw new EditorError(409, `La vérification échoue : ${check.output}`);
+  }
+  await assertSafeFiles(ws.tree, changes.map(c=>c.path), s.org_id).catch(e=>{throw new EditorError(409,(e as Error).message);});
   const p = rowToProject(project);
   await commitAs(ws, `${message}\n\nModifié dans l'éditeur Atelier par ${user.email}`, { name: user.name || user.email.split("@")[0]!, email: user.email });
   try { await pushBranch(p, ws, s.branch); }
@@ -275,7 +281,7 @@ export async function commitSession(s: EditorSession, user: { name: string | nul
     // la proposition de la tâche s'enrichit : on cumule les fichiers et on garde l'alerte des chemins protégés
     const t = getTaskInOrg(s.task_id, s.org_id)!;
     const all = [...new Set([...(JSON.parse(t.files_json ?? "[]") as string[]), ...changes.map((c) => c.path)])];
-    updateTask(t.id, { files_json: JSON.stringify(all.slice(0, 200)), flagged: Math.max(t.flagged, flagged.length) });
+    updateTask(t.id, { files_json: JSON.stringify(all.slice(0, 200)), flagged: Math.max(t.flagged, flagged.length), pushed_sha: await revision(ws), last_error: null });
     mrUrl = t.mr_url;
   } else if (!mrUrl && p.forge !== "none") {
     const title = `${flagged.length ? "[REVUE REQUISE] " : ""}atelier : ${message.split("\n")[0]!.slice(0, 70)}`;

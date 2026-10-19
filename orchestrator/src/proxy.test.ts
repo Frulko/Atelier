@@ -3,12 +3,20 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
+import { once } from "node:events";
 import type { AddressInfo } from "node:net";
 
 const calls: { url: string; headers: http.IncomingHttpHeaders }[] = [];
+let streamClosed: Promise<unknown> | undefined;
 const upstream = http.createServer((req, res) => {
   calls.push({ url: req.url!, headers: req.headers });
   req.resume();
+  if (req.headers["anthropic-beta"] === "test-cancellation") {
+    streamClosed = once(res, "close", { signal: AbortSignal.timeout(2000) });
+    res.writeHead(200, { "content-type": "text/event-stream" });
+    res.write('data: {"type":"message_start"}\n\n');
+    return;
+  }
   res.writeHead(200, { "content-type": "application/json" }).end('{"ok":true}');
 }).listen(0);
 const up = `http://127.0.0.1:${(upstream.address() as AddressInfo).port}`;
@@ -36,6 +44,8 @@ const base = `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`;
 
 const send = (path: string, headers: Record<string, string> = {}, method = "POST") =>
   fetch(base + path, { method, headers: { "content-type": "application/json", ...headers }, body: method === "POST" ? "{}" : undefined });
+const payload = (token: string, body: string, path = "/anthropic/v1/messages", headers = {}) =>
+  fetch(base + path, { method: "POST", headers: { "x-api-key": token, ...headers }, body });
 const anthropic = (token?: string) => send("/anthropic/v1/messages", token ? { "x-api-key": token } : {});
 const before = () => calls.length;
 
@@ -92,6 +102,31 @@ test("jeton révoqué (fin de tâche) : refusé", async () => {
   assert.equal((await anthropic(t)).status, 401);
 });
 
+test("revoking a task token closes its already-running provider stream", async () => {
+  const token = T.issueTaskToken("streaming-cancel", orgA);
+  const response = await payload(token, "{}", undefined, { "anthropic-beta": "test-cancellation" });
+  assert.equal(response.status, 200);
+  assert.ok(streamClosed);
+  T.revokeTaskTokens("streaming-cancel");
+  await streamClosed;
+  await response.body?.cancel();
+});
+
+test("a running task loses model access as soon as its requester's rights are removed", async () => {
+  const user = db.createUser("agent-user@example.test", "hash");
+  db.addMember(orgA, user.id, "member");
+  const project=db.insertProject({org_id:orgA,slug:"guard",name:"Guard",repo:"https://github.com/example/test.git",branch:"main",forge:"none",check_cmd:"true",engine:"claude",protected_paths:"[]",git_secret_id:null});
+  db.createTask("role-guard", orgA, user.id, project, "task");
+  db.updateTask("role-guard", { status: "running" });
+  const token = T.issueTaskToken("role-guard", orgA);
+  assert.equal((await anthropic(token)).status, 200);
+  db.db.prepare("update memberships set role='viewer' where org_id=? and user_id=?").run(orgA, user.id);
+  const n = before();
+  assert.equal((await anthropic(token)).status, 403);
+  assert.equal(calls.length, n);
+  T.revokeTaskTokens("role-guard");
+});
+
 test("budget mensuel épuisé : 402 ; sans plafond ou sous le plafond : accepté", async () => {
   const t = T.issueTaskToken("t7", orgA);
   db.createTask("aaaaaaa1", orgA, owner.id, "p", "x");
@@ -114,4 +149,66 @@ test("routes non autorisées : seulement la génération, en POST, vers les four
   assert.equal((await send("/inconnu/v1/messages", { "x-api-key": t })).status, 403);
   assert.equal((await send("/", { "x-api-key": t })).status, 403);
   assert.equal(calls.length, n);
+});
+
+test("capabilities: model tokens cannot install packages, npm tokens cannot call models", async () => {
+  const model = T.issueTaskToken("isolated-model", orgA);
+  const npm = T.issueTaskToken("isolated-npm", orgA, "npm");
+  assert.equal((await send("/npm/react", { authorization: `Bearer ${model}` })).status, 401);
+  assert.equal((await anthropic(npm)).status, 401);
+  assert.equal((await send("/anthropic/v1/messages/batches", { "x-api-key": model })).status, 403);
+});
+
+test("model request firewall rejects known secrets, Unicode escapes, headers and URLs before upstream", async () => {
+  const t = T.issueTaskToken("firewall", orgA), n = before();
+  const secret = "sk-ant-KEY-OF-A-0000";
+  const escaped = [...secret].map(c => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`).join("");
+  for (const body of [JSON.stringify({ messages: [{ content: secret }] }), `{"messages":[{"content":"${escaped}"}]}`, JSON.stringify({ [secret]: "hidden in a key" })]) {
+    const res = await payload(t, body);
+    assert.equal(res.status, 422);
+    assert.ok(!(await res.text()).includes(secret));
+  }
+  assert.equal((await payload(t, "{}", `/anthropic/v1/messages?value=${secret}`)).status, 422);
+  assert.equal((await payload(t, "{}", `/anthropic/v1/messages?value=${[...secret].map(c => `%${c.charCodeAt(0).toString(16)}`).join("")}`)).status, 422);
+  assert.equal((await payload(t, "{}", undefined, { "anthropic-beta": secret })).status, 422);
+  assert.equal(calls.length, n);
+  assert.equal((await payload(t, JSON.stringify({ messages: [{ content: "Hello" }] }))).status, 200);
+});
+
+test("model request firewall bounds and validates JSON before contacting upstream", async () => {
+  const t = T.issueTaskToken("malformed", orgA), n = before();
+  for (const invalid of ["{broken", "[]", "null"])
+    assert.equal((await payload(t, invalid)).status, 400);
+  assert.equal((await payload(t, JSON.stringify({ text: "x".repeat(10_000_000) }))).status, 413);
+  assert.equal(calls.length, n);
+});
+
+test("a provider key echoed across streaming chunks is redacted",async()=>{
+  const {redactStream}=await import("./proxy.ts");
+  const {Readable}=await import("node:stream");
+  const key="sk-a-provider-key-that-must-stay-private";
+  const stream=Readable.from([`avant ${key.slice(0,12)}`,`${key.slice(12)} après ${key}`]).pipe(redactStream(key));
+  let out="";for await(const chunk of stream)out+=chunk.toString();
+  assert.equal(out,"avant [redacted] après [redacted]");
+});
+
+test("stream redaction handles repeated keys at every chunk boundary",async()=>{
+  const {redactStream}=await import("./proxy.ts");const {Readable}=await import("node:stream");
+  const key="a-private-provider-value",text=`${key} some text ${key} tail ${key}`,expected=text.split(key).join("[redacted]");
+  for(let index=1;index<text.length;index++){
+    let out="";for await(const part of Readable.from([text.slice(0,index),text.slice(index)]).pipe(redactStream(key)))out+=part.toString();
+    assert.equal(out,expected,`boundary ${index}`);
+  }
+});
+
+test("a budgeted task cannot bypass its envelope through repeated direct proxy calls",async()=>{
+  const b=await import("./budget.ts");
+  const project=db.insertProject({org_id:orgA,slug:"meter-http",name:"Meter HTTP",repo:"https://github.com/example/test.git",branch:"main",forge:"none",check_cmd:"true",engine:"claude",protected_paths:"[]",git_secret_id:null});
+  db.createTask("meter-http",orgA,owner.id,project,"Metering");db.updateTask("meter-http",{status:"running"});
+  const hold=b.reserveBudget(orgA,project,0.03,"meter-http"),token=T.issueTaskToken("meter-http",orgA,"model",hold.id);
+  const input=JSON.stringify({model:"claude-haiku-5-5",max_tokens:4096,messages:[{role:"user",content:"Hello"}]});
+  const n=before();assert.equal((await payload(token,input)).status,200);
+  assert.equal((await payload(token,input)).status,402);
+  assert.equal(calls.length,n+1);
+  T.revokeTaskTokens("meter-http");b.settleBudget(hold.id);
 });

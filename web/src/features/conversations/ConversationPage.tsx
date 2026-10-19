@@ -155,7 +155,7 @@ function ChatWindow({ conversation, initial }: { conversation: Conversation; ini
                     <MessageAction tooltip="Copier" label="Copier" onClick={() => navigator.clipboard?.writeText(textOf(m)).then(() => toast("Copié."))}><Copy className="size-3.5" /></MessageAction>
                     <MessageAction tooltip="Régénérer" label="Régénérer" onClick={() => regenerate()}><RotateCw className="size-3.5" /></MessageAction>
                     {conversation.projectId && lastUser && (
-                      <MessageAction tooltip="Lancer comme tâche" label="Lancer comme tâche" disabled={promote.isPending} onClick={() => promote.mutate(withoutFiles(textOf(lastUser)) || textOf(lastUser))}><ListChecks className="size-3.5" /></MessageAction>
+                      <MessageAction tooltip="Lancer comme tâche avec le contexte de cette discussion" label="Lancer comme tâche" disabled={promote.isPending} onClick={() => promote.mutate(withoutFiles(textOf(lastUser)) || textOf(lastUser))}><ListChecks className="size-3.5" /></MessageAction>
                     )}
                   </MessageActions>
                 )}

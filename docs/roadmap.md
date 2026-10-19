@@ -10,10 +10,11 @@
 | **U6b** | Web UI for organizations, members, invitations, projects, secrets and the budget | ✅ |
 | **C1–C4** | Knowledge base, discussion assistant (AI SDK, attachments), tasks as conversations with follow-up turns, dashboard health and git status, welcome tour, guide and first steps | ✅ |
 | **Editor** | In-browser code editor (Monaco) that commits to a branch under the same review rules — [design](editor-design.md) | ✅ |
-| **SSO** | OIDC and GitLab / GitHub sign-in | planned |
-| **M2** | Real agent validated end to end, preview per merge request, QA agent with screenshots | planned |
-| **M3** | Release button and rollback, immutable audit log | planned |
-| **M4** | Independent reviewer agent, protected paths that block instead of flag, spend ceilings, kill switch | planned |
+| **Background agents** | Persisted queue, cron/timezones, bounded autonomous missions, private inbox and optional Web Push | implemented |
+| **SSO** | Keycloak OIDC alongside passwords; explicit identity linking and existing roles | implemented; real Keycloak setup remains to validate |
+| **M2** | Docker previews and Chromium desktop/mobile checks | implemented; real agent validation remains pending |
+| **M3** | Docker publication and artifact rollback | implemented; database rollback and immutable external audit storage remain pending |
+| **M4** | Daily project budgets, per-call agent metering and technician questions via Discord/Telegram implemented; independent reviewer and organization kill switch remain pending | partial |
 | **SaaS** | See below | planned |
 
 ## Toward a multi-tenant SaaS

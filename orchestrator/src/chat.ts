@@ -1,3 +1,4 @@
+import { assertBudget, reserveBudget, settleBudget } from "./budget.ts";
 import type { Part } from "./attachments.ts";
 import type { ServerResponse } from "node:http";
 import { convertToModelMessages, streamText, type LanguageModel, type UIMessage } from "ai";
@@ -5,9 +6,10 @@ import type { LanguageModelV3StreamPart } from "@ai-sdk/provider";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { assertNoSecretText } from "./security.ts";
 import { cfg } from "./config.ts";
 import {
-  DEFAULT_TITLE, deleteTrailingAssistant, getMessages, getOrg, getProjectInOrg, insertMessage, listKnowledge, setConversationTitle,
+  db, DEFAULT_TITLE, deleteTrailingAssistant, getMessages, getOrg, getProjectInOrg, insertMessage, listKnowledge, setConversationTitle,
   type ConversationRow, type MessageRow, type ProjectRow,
 } from "./db.ts";
 import { renderKnowledge, selectKnowledge } from "./knowledge.ts";
@@ -128,8 +130,12 @@ export function friendlyError(raw: unknown): string {
 export async function runChat(o: { res: ServerResponse; conv: ConversationRow; orgId: string; text: string | null; files?: Part[]; signal: AbortSignal }): Promise<{ status: number; error: string } | null> {
   const m = await resolveModel(o.orgId);
   if (!m.ok) return { status: m.status, error: m.error };
+  const org = getOrg(o.orgId)!;
+  if (!cfg.fakeAgent && (org.budget_usd_month !== null || (o.conv.project_id && getProjectInOrg(o.conv.project_id,o.orgId)?.budget_usd_day!=null)) && (org.chat_input_price === null || org.chat_output_price === null)) return {status:409,error:"Configure les tarifs du modèle dans Organisation pour inclure cette discussion dans le budget mensuel."};
+  const pricing = {input:org.chat_input_price??0,output:org.chat_output_price??0};
   const project = o.conv.project_id ? getProjectInOrg(o.conv.project_id, o.orgId) : undefined;
 
+  try { assertBudget(o.orgId,o.conv.project_id??undefined); } catch(e) { return {status:402,error:(e as Error).message}; }
   if (o.text !== null) {
     const files = o.files ?? [];
     insertMessage(o.conv.id, "user", [...(o.text ? [{ type: "text", text: o.text }] : []), ...files]);
@@ -143,15 +149,27 @@ export async function runChat(o: { res: ServerResponse; conv: ConversationRow; o
   const sources = sel.chosen.map((k) => ({ id: k.id, title: k.title }));
   const system = buildSystem(project, renderKnowledge(sel.chosen));
 
-  const result = streamText({ model: m.model, system, messages: await convertToModelMessages(windowMessages(history)), abortSignal: o.signal, maxOutputTokens: 4096, maxRetries: 1, onError: () => {} /* le SDK écrirait l'erreur brute dans les journaux : on journalise nous-mêmes, sans le texte */ });
+  try { await assertNoSecretText(`${system}\n${windowMessages(history).map(textOf).join("\n")}`,o.orgId); }
+  catch { return {status:400,error:"Un secret potentiel est présent dans le contexte. Retire-le et utilise les variables chiffrées."}; }
+
+  const modelMessages=await convertToModelMessages(windowMessages(history));
+  const estimate=cfg.fakeAgent ? 0 : ((Buffer.byteLength(system)+Buffer.byteLength(JSON.stringify(modelMessages))+1024)*pricing.input+4096*pricing.output)/1_000_000;
+  let hold: {id:string;amount:number};
+  try { hold=reserveBudget(o.orgId,o.conv.project_id??undefined,estimate,undefined,true); }
+  catch(e) {return {status:402,error:(e as Error).message};}
+  const result = streamText({ model: m.model, system, messages: modelMessages, abortSignal: o.signal, maxOutputTokens: 4096, maxRetries: 0, onError: () => {} /* le SDK écrirait l'erreur brute dans les journaux : on journalise nous-mêmes, sans le texte */ });
   result.pipeUIMessageStreamToResponse(o.res, {
     originalMessages: history,
     messageMetadata: ({ part }) => (part.type === "start" ? { sources, model: m.modelId, provider: m.provider } : undefined),
     onError: (e) => { const u = unwrap(e) as { statusCode?: number; name?: string }; console.warn(`chat: erreur du fournisseur (${u?.name ?? "inconnue"}, HTTP ${u?.statusCode ?? "?"})`); return friendlyError(e); }, // jamais le texte brut : il pourrait citer une clé
     onEnd: async ({ responseMessage, isAborted }) => {
-      if (!responseMessage.parts.length) return; // rien n'a été produit : rien à enregistrer
+      let reported=false;
       let usage: { inputTokens?: number; outputTokens?: number } = {};
-      try { const u = await result.totalUsage; usage = { inputTokens: u.inputTokens ?? 0, outputTokens: u.outputTokens ?? 0 }; } catch { /* arrêté avant la fin */ }
+      try { const u = await result.totalUsage; usage = { inputTokens: u.inputTokens ?? 0, outputTokens: u.outputTokens ?? 0 }; reported=true; } catch { /* arrêté avant la fin */ }
+      const usd=((usage.inputTokens??0)*pricing.input+(usage.outputTokens??0)*pricing.output)/1_000_000;
+      if (Number.isFinite(usd) && usd > 0) db.prepare("insert into expenses (org_id,task_id,project_id,hold_id,ts,usd) values (?,null,?,?,?,?)").run(o.orgId,o.conv.project_id,hold.id,Date.now(),usd);
+      settleBudget(hold.id,!reported);
+      if(!responseMessage.parts.length)return;
       insertMessage(o.conv.id, "assistant", responseMessage.parts, { sources, model: m.modelId, provider: m.provider, usage, ...(isAborted ? { aborted: true } : {}) });
     },
   });

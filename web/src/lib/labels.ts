@@ -16,7 +16,7 @@ export const FORGE_LABEL = { gitlab: "GitLab", github: "GitHub", none: "Branche 
 /** Familles d'événements du journal, pour le filtre. La valeur se termine par un point : c'est un préfixe. */
 export const AUDIT_GROUPS: { value: string; label: string }[] = [
   { value: "", label: "Tout" }, { value: "task.", label: "Tâches" }, { value: "project.", label: "Projets" }, { value: "secret.", label: "Secrets" },
-  { value: "member.", label: "Membres" }, { value: "invitation.", label: "Invitations" }, { value: "org.", label: "Organisation" }, { value: "auth.", label: "Connexions" }, { value: "audit.", label: "Journal" },
+  { value: "member.", label: "Membres" }, { value: "invitation.", label: "Invitations" }, { value: "org.", label: "Organisation" }, { value: "auth.", label: "Connexions" }, { value: "human.", label: "Décisions humaines" }, { value: "audit.", label: "Journal" },
 ];
 
 const s = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : String(v));
@@ -26,6 +26,14 @@ const role = (v: unknown) => ROLE_LABEL[v as Role] ?? s(v);
 export function describeAudit(e: Pick<AuditItem, "action" | "meta">): string {
   const m = e.meta ?? {};
   switch (e.action) {
+    case "auth.sso_login": return "s'est connecté(e) avec Keycloak";
+    case "auth.sso_link": return "a associé son compte Keycloak";
+    case "auth.sso_unlink": return "a dissocié son compte Keycloak";
+    case "human.channel_set": return `a configuré le canal ${s(m.provider)} du technicien`;
+    case "human.channel_delete": return "a désactivé un canal du technicien";
+    case "human.question": return m.kind === "budget" ? "a demandé une rallonge journalière" : "a demandé une décision technique";
+    case "human.answer": return `a répondu à une demande humaine (choix ${s(m.choice)})`;
+    case "org.agent_models": return "a modifié les modèles des agents";
     case "auth.login": return "s'est connecté(e)";
     case "auth.login_failed": return "tentative de connexion échouée";
     case "auth.logout": return "s'est déconnecté(e)";
