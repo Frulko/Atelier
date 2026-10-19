@@ -19,8 +19,8 @@ Cette note sert de fiche d'exécution pour une première installation ou une mis
 ## Prérequis
 
 - [ ] Production dédiée, Docker Engine + Compose et Portainer ; un seul orchestrateur, sans Swarm.
-- [ ] GitLab privé, Container Registry actif, branche par défaut et tags `v*` protégés.
-- [ ] Runner Docker pour les contrôles Node ; runner Shell **protégé**, tag `atelier-docker`, distinct de la production, avec Node 24, Docker/Compose/Buildx et Playwright.
+- [ ] GitLab privé, Container Registry actif, accès au projet `myrole/ci-templates`, branche par défaut, staging si utilisée et tags `v*` protégés.
+- [ ] Runner Docker pour les contrôles, BuildKit et déploiements ; runner Shell **protégé**, tag `atelier-docker`, distinct de la production, avec Node 24, Docker/Compose/Buildx et Playwright pour l'intégration.
 - [ ] Architecture des images adaptée au serveur ; le pipeline utilise `linux/amd64` par défaut.
 - [ ] Portainer autorisé à tirer les images avec un deploy token GitLab limité à `read_registry`.
 - [ ] DNS et HTTPS pour Atelier ; DNS wildcard et certificat pour les applications sur un domaine distinct.
@@ -68,14 +68,14 @@ Client confidentiel, Standard flow, PKCE S256, signature RS256 ; callback exact 
 
 ## Exécution de la livraison
 
-1. **Préparer.** Relire et commiter les changements, puis pousser la branche par défaut. Pour une mise à jour, suspendre les planifications concernées et attendre la fin des tâches actives.
-2. **Publier.** Créer un nouveau tag protégé, par exemple `git tag v1.0.0`, puis `git push gitlab v1.0.0` si le remote s'appelle `gitlab`. Attendre la réussite de `checks`, `integration` et `images` dans le [pipeline](../.gitlab-ci.yml).
-3. **Sauvegarder avant remplacement.** Pour une installation existante, arrêter les écrivains le temps d'une sauvegarde cohérente : orchestrateur **et applications créées** pour leurs bases. Sauvegarder le volume `/data`, tout `/srv/atelier/work`, le Compose et les variables Portainer ; conserver la clé maître séparément. Identifier les services arrêtés pour les remettre en marche après l'intervention.
-4. **Déployer.** Dans Portainer, renseigner **la même version pour les deux images**, puis lancer **Deploy / Update the stack** avec récupération des images. Conserver volumes, chemins et personnalisations réseau.
+1. **Préparer.** Relire et commiter les changements. Pour une mise à jour, suspendre les planifications concernées et attendre la fin des tâches actives avant de pousser sur une branche de livraison.
+2. **Sauvegarder avant livraison.** Pour une installation existante, arrêter les écrivains le temps d'une sauvegarde cohérente : orchestrateur **et applications créées** pour leurs bases. Sauvegarder le volume `/data`, tout `/srv/atelier/work`, le Compose et les variables Portainer ; conserver la clé maître séparément. Identifier les services arrêtés pour les remettre en marche après l'intervention.
+3. **Publier.** Pousser la branche protégée de production ou staging, ou un nouveau tag protégé comme `v1.0.0`. Attendre la réussite de `checks`, `integration`, `build-orchestrator` et `build-sandbox` dans le [pipeline](../.gitlab-ci.yml).
+4. **Déployer.** Si le webhook correspondant est configuré, `deploy` ou `deploy-staging` se lance automatiquement après les deux builds et transmet le tag `commit-<SHA>` des deux images. Sinon, renseigner **la même version pour les deux images** dans Portainer puis lancer **Deploy / Update the stack**. Conserver volumes, chemins et personnalisations réseau.
 5. **Contrôler.** Exécuter la recette ci-dessous. Ne réactiver les planifications qu'après validation et remise en marche des applications arrêtées.
 6. **Tracer.** Renseigner version, commit, sauvegarde, intervenant, résultat et éventuelles anomalies dans la fiche de livraison.
 
-Avec **CE**, ce parcours utilise la mise à jour manuelle de la stack. Le chemin prévu pour **BE** peut déclencher le déploiement depuis GitLab avec `PORTAINER_STACK_WEBHOOK` masquée/protégée ; `ATELIER_AUTO_DEPLOY=1` automatise les tags protégés. Préparer la sauvegarde et la fenêtre avant de pousser le tag si cette option est active. La CI ne réalise ni sauvegarde ni retour arrière automatique. Un webhook accepté ne prouve pas que la nouvelle version est opérationnelle. Voir les [conditions du déclenchement CI](gitlab-portainer.md#8-mettre-à-jour-depuis-gitlab-cicd).
+Comme MyRole 3, utiliser `PORTAINER_WEBHOOK_URL` / `PORTAINER_WEBHOOK_SECRET` en production et `PORTAINER_STAGING_WEBHOOK_URL` / `PORTAINER_STAGING_WEBHOOK_SECRET` en staging. Le secret est envoyé via `x-webhook-secret` au proxy MyRole ; un webhook Portainer direct peut fonctionner sans ce header. Les webhooks directs de stack Web editor nécessitent **BE** ; **CE** conserve le chemin manuel en l'absence d'intégration dédiée. La CI ne réalise ni sauvegarde ni retour arrière automatique. Un webhook accepté ne prouve pas que la nouvelle version est opérationnelle. Voir les [conditions du déclenchement CI](gitlab-portainer.md#8-mettre-à-jour-depuis-gitlab-cicd).
 
 ## Recette après déploiement
 

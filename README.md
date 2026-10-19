@@ -56,7 +56,7 @@ git clone <this repository> atelier && cd atelier
 
 Ask for anything. A request containing the word **"casse"** makes the project's check fail so you can watch the agent get re-run with the error and fix it.
 
-To run it for real (your own projects, a real model, a real forge), see **[Deployment](docs/deployment.md)** and **[Configuration](docs/configuration.md)**. On a server with Docker or Portainer it takes published images and one compose file (`docker-compose.prod.yml`); a GitHub Actions pipeline builds, tests and publishes them.
+To run it for real (your own projects, a real model, a real forge), see **[Deployment](docs/deployment.md)** and **[Configuration](docs/configuration.md)**. On a server with Docker or Portainer it takes published images and one compose file (`docker-compose.prod.yml`). GitLab CI reuses the MyRole BuildKit/deployment templates with production and staging webhooks; the GitHub Actions pipeline remains available for GitHub hosting.
 
 ## Status
 

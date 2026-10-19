@@ -31,7 +31,7 @@ DNS à créer vers le reverse proxy : `atelier.example.com` et `*.apps.example.n
 
 1. Crée un projet **privé** vide, sans README initial si tu importes ce dépôt.
 2. Vérifie que **Container Registry** est activé. Dans **Deploy → Container Registry** ou **Packages and registries**, copie son chemin exact. Sur une instance auto-hébergée, le domaine et le port peuvent différer de ceux de GitLab.
-3. Dans les règles du dépôt, protège la branche par défaut (`main`) et les tags `v*`. Réserve leur écriture aux responsables des livraisons.
+3. Dans les règles du dépôt, protège la branche par défaut (`main`), `staging` si utilisée et les tags `v*`. Réserve leur écriture aux responsables des livraisons.
 4. Pousse le code après l'avoir relu :
 
 ```bash
@@ -41,16 +41,18 @@ git push gitlab main
 
 La commande suppose que les changements ont été commités et que la branche locale s'appelle `main`. Si le remote `gitlab` existe déjà, vérifie son URL avec `git remote -v` et adapte-la, sans écraser un remote utile. Ne commite aucun `.env` ni jeton.
 
-Le fichier [`.gitlab-ci.yml`](../.gitlab-ci.yml) est prêt. GitLab le détecte à la racine ; aucune clé Anthropic, Discord, Telegram ou Keycloak n'est nécessaire dans la CI pour tester et publier les images.
+Le fichier [`.gitlab-ci.yml`](../.gitlab-ci.yml) réutilise les templates BuildKit et déploiement de `myrole/ci-templates`, comme MyRole 3. Leur révision est épinglée au commit `9a47c54da0256171eaa59dca8afc9d94dd99a679`, correspondant au tag `v1` inspecté. Les personnes lançant les pipelines doivent pouvoir lire ce projet privé. Aucune clé Anthropic, Discord, Telegram ou Keycloak n'est nécessaire pour tester et publier les images.
 
 ### Les deux types de runners
 
 | Runner | Configuration | Utilisation |
 |---|---|---|
-| Contrôles Node | Exécuteur **Docker**, image autorisée `node:24-bookworm`, accepte les jobs sans tag, sans socket Docker et sans mode privilégié | Types, tests et compilation sur branches et merge requests |
-| Intégration et publication | Exécuteur **Shell**, tag `atelier-docker`, **Protected**, verrouillé à ce projet, n'accepte pas les jobs sans tag | Tests Docker complets et publication sur branche par défaut/tags protégés |
+| Contrôles, builds et déploiement | Exécuteur **Docker**, accepte les jobs sans tag, images `node:24-bookworm` et BuildKit du template, sans socket Docker | Types/tests et compilation ; BuildKit publie les images ; Node appelle le webhook |
+| Intégration | Exécuteur **Shell**, tag `atelier-docker`, **Protected**, verrouillé à ce projet, n'accepte pas les jobs sans tag | Tests Docker complets avant les builds, sur branche par défaut, staging et tags protégés |
 
-Un runner existant peut faire les contrôles Node s'il répond à ces conditions. Le runner Shell doit résider sur une VM dédiée, sans données de production : l'accès au groupe Docker permet de contrôler son hôte. Les contributions non fiables ne doivent jamais s'exécuter sur ce runner. Pour une isolation plus forte entre jobs, utilise des VM de CI éphémères. [Documentation GitLab sur Docker dans les jobs](https://docs.gitlab.com/ci/docker/using_docker_build/).
+Le runner Docker existant de MyRole peut servir aux contrôles et builds si ses permissions permettent BuildKit rootless ou l'accès au builder persistant TLS du template. Le runner Shell doit résider sur une VM dédiée, sans données de production : l'accès au groupe Docker permet de contrôler son hôte. Les contributions non fiables ne doivent jamais s'exécuter sur ce runner. Pour une isolation plus forte entre jobs, utilise des VM de CI éphémères. [Documentation GitLab sur Docker dans les jobs](https://docs.gitlab.com/ci/docker/using_docker_build/).
+
+Le template choisit le builder persistant lorsque ses certificats `BUILDKIT_TLS_CA`, `BUILDKIT_TLS_CERT` et `BUILDKIT_TLS_KEY` permettent de le joindre ; sinon il utilise `buildctl-daemonless.sh`. Configure ces variables comme dans l'infrastructure MyRole si ce builder est utilisé. [BuildKit dans GitLab](https://docs.gitlab.com/ci/docker/using_buildkit/).
 
 ### Installer et enregistrer les runners
 
@@ -84,7 +86,7 @@ La première vérification doit afficher `v24.…`. Une installation Node faite 
 
 Le runner Docker et le runner Shell peuvent partager une **machine de CI dédiée**, mais pas le serveur de production. Règle sa concurrence à `1` si cette machine leur est réservée. Les jobs utilisant le démon Docker sont aussi sérialisés par `resource_group`, car les tests utilisent des noms fixes.
 
-Le pipeline publie `linux/amd64` par défaut. Pour un serveur ARM64, configure `PLATFORMS=linux/arm64` et un runner ARM64. Le multiarchitecture (`linux/amd64,linux/arm64`) exige un builder et des workers/une émulation appropriés ; ne l'active pas sans les préparer.
+Le pipeline publie `linux/amd64` par défaut. Pour un serveur ARM64, configure `PLATFORMS=linux/arm64` et un builder compatible. Le multiarchitecture (`linux/amd64,linux/arm64`) exige des workers/une émulation appropriés ; ne l'active pas sans les préparer.
 
 ### Certificats internes
 
@@ -105,7 +107,8 @@ Choisis un numéro encore inutilisé. Dans **Build → Pipelines**, attends la r
 
 1. `checks` : types, tests serveur/interface et build web ;
 2. `integration` : tests Docker avec navigateur, puis démarrage de la stack de production ;
-3. `images` : publication de **deux images privées** dans le registre GitLab.
+3. `build-orchestrator` et `build-sandbox` : publication des **deux images privées** via BuildKit ;
+4. `deploy` : appel du webhook de production s'il est configuré, une fois les deux builds réussis.
 
 Pour l'exemple, les images seront :
 
@@ -114,7 +117,7 @@ registry.example.com/equipe/atelier/atelier:1.0.0
 registry.example.com/equipe/atelier/atelier-sandbox:1.0.0
 ```
 
-Le double `atelier/atelier` est normal : le premier appartient au chemin du projet, le second est le nom de l'image. Sur la branche par défaut, la version est le SHA complet du commit ; sur `v1.0.0`, elle est `1.0.0`. Le script existant publie aussi `latest`, mais la stack de production utilise toujours une version précise. Ne republie pas une version de livraison déjà utilisée.
+Le double `atelier/atelier` est normal : le premier appartient au chemin du projet, le second est le nom de l'image. Les deux builds publient toujours `commit-<SHA complet>`. Ils ajoutent `latest` sur la branche par défaut, `staging` sur la branche staging, ou `1.0.0` pour le tag `v1.0.0`. Le déploiement CI utilise toujours **le tag `commit-<SHA>` pour les deux images**, afin de livrer exactement les builds de sa pipeline. Ne republie pas un tag de version déjà utilisé.
 
 L'authentification de publication utilise les identifiants temporaires `CI_REGISTRY_USER` / `CI_REGISTRY_PASSWORD` fournis par GitLab ; aucun PAT permanent à ajouter. [Documentation du registre GitLab](https://docs.gitlab.com/user/packages/container_registry/build_and_push_images/).
 
@@ -270,38 +273,42 @@ Termine par une petite tâche sur un projet de test, une prévisualisation et un
 
 ## 8. Mettre à jour depuis GitLab CI/CD
 
-### Compatible Portainer CE et BE : publication automatique, déploiement manuel
+### Publication automatique, déploiement manuel sans webhook
 
-La CI publie les images automatiquement après ses tests. Pour livrer `1.0.1` :
+La CI publie les images automatiquement après ses tests. Pour livrer manuellement, laisse les variables de webhook absentes. Après la réussite des deux builds, renseigne dans Portainer les deux images `commit-<SHA complet>` du même commit, ou un tag de version publié. Sauvegarde d'abord les données, puis **Update the stack** et vérifie les deux images, `healthy`, une connexion et une petite tâche.
 
-```bash
-git push gitlab main
-git tag v1.0.1
-git push gitlab v1.0.1
-```
+### Déploiement automatique comme MyRole 3
 
-Après la réussite de `images`, dans **Portainer → Stacks → atelier → Editor / Environment variables** :
+Le pipeline importe `.default-deploy` de `myrole/ci-templates` pour l'environnement, la sérialisation des livraisons et les retries d'infrastructure. Atelier conserve son script Node pour transmettre les deux références d'images exactes et masquer les erreurs contenant l'URL secrète. Aucun retry applicatif automatique du POST n'est ajouté.
 
-1. Fais la sauvegarde décrite plus bas et attends la fin des agents en cours ; une mise à jour peut interrompre une exécution.
-2. Remplace **les deux** images par `:1.0.1`.
-3. Clique **Update the stack**, avec récupération des images si l'option est proposée.
-4. Vérifie `healthy`, les tags réellement utilisés sur les deux conteneurs/services, `/healthz`, une connexion et une petite tâche.
+Dans GitLab **Settings → CI/CD → Variables**, configure :
 
-### Portainer BE : déclenchement depuis la CI
+| Variable | Usage |
+|---|---|
+| `PORTAINER_WEBHOOK_URL` | URL HTTPS du webhook de la stack de production, directe ou via le proxy MyRole |
+| `PORTAINER_WEBHOOK_SECRET` | Secret du proxy, envoyé via le header `x-webhook-secret` |
+| `PORTAINER_STAGING_WEBHOOK_URL` | URL du webhook de la stack staging |
+| `PORTAINER_STAGING_WEBHOOK_SECRET` | Secret du proxy pour staging |
 
-Les webhooks de stack **Web editor** sont réservés à Business Edition. Leur réponse confirme la demande, pas la fin du déploiement. [Documentation Portainer](https://docs.portainer.io/user/docker/stacks/webhooks).
+Ces variables doivent être **Masked**, **Protected**, avec expansion des références désactivée. Utilise le scope `*` pour les URL, car les règles de création des jobs testent leur présence. Chaque URL doit finir par `/api/stacks/webhooks/<identifiant>`, sans query string ; le script ajoute lui-même `ATELIER_IMAGE` et `ATELIER_SANDBOX_IMAGE`.
 
-1. Dans la stack `atelier`, active **Create a stack webhook** et copie l'URL HTTPS finissant par `/api/stacks/webhooks/<identifiant>`, sans query string.
-2. Dans GitLab **Settings → CI/CD → Variables**, ajoute `PORTAINER_STACK_WEBHOOK` : **Masked**, **Protected**, expansion des références désactivée. Utilise le scope `*`, car le pipeline teste sa présence dans les règles de création du job. L'URL complète est un secret donnant le droit de redéployer cette stack.
-3. Le runner du job Node doit joindre cette URL via le réseau d'administration/VPN, avec un certificat TLS fiable. N'expose pas toute l'administration Portainer à Internet pour résoudre un problème de connectivité.
-4. Crée un nouveau tag protégé. Une fois les images publiées, le job **`deploy-portainer`** apparaît : clique pour lancer le déploiement de cette version.
-5. Pour supprimer ce clic sur les prochaines versions, ajoute **`ATELIER_AUTO_DEPLOY=1`**, protégée. Dès lors, chaque tag `vX.Y.Z` protégé dont les tests passent déclenche la mise à jour.
+Avec un webhook direct Portainer, le header secret peut rester absent. Les webhooks de stack **Web editor** sont réservés à Business Edition. Le proxy MyRole protège l'accès au webhook mais ne remplace pas les capacités/licences de Portainer. Avec CE sans intégration dédiée, utilise la mise à jour manuelle. [Documentation Portainer](https://docs.portainer.io/user/docker/stacks/webhooks).
 
-Le job transmet `ATELIER_IMAGE` et `ATELIER_SANDBOX_IMAGE` dans les paramètres du webhook. Le Compose reste dans Portainer ; les secrets et les adaptations du réseau proxy restent sur place. Le script n'affiche ni l'URL secrète ni les réponses du serveur. Configure aussi les journaux du proxy de Portainer pour ne pas journaliser le chemin secret ou sa query string. Vérifie dans ta version de Portainer que les paramètres sont appliqués aux images et persistent pour les mises à jour suivantes.
+| Référence protégée | Job automatique si URL renseignée | Images livrées |
+|---|---|---|
+| Branche par défaut, normalement `main` | `deploy` → production | Les deux tags `commit-<SHA>` |
+| `staging` | `deploy-staging` → staging | Les deux tags `commit-<SHA>` |
+| Tag `vX.Y.Z` | `deploy` → production | Les deux tags `commit-<SHA>` ; alias de version aussi publié |
 
-Il n'y a ni sauvegarde automatique avant ce job, ni rollback automatique, ni garantie de disponibilité pendant le remplacement de l'unique orchestrateur. Prévois une fenêtre de livraison et une sauvegarde cohérente ; les agents actifs doivent être terminés. Un job vert signifie **demande acceptée par Portainer** : vérifie ensuite la version déployée et la santé réelle.
+Dès que les URL sont configurées, une livraison sur ces références déclenche le déploiement après les tests et les **deux builds**. Il n'y a plus de clic ni de variable `ATELIER_AUTO_DEPLOY`. L'ancienne variable `PORTAINER_STACK_WEBHOOK` est remplacée dans la CI par `PORTAINER_WEBHOOK_URL` ; l'ancien nom reste accepté par le script pour un appel direct hors pipeline.
 
-**Avec CE**, conserve le chemin manuel ci-dessus. Le polling GitOps existe pour les stacks Git, mais observer `main` ou un tag mutable avant la fin des builds peut lancer la livraison trop tôt. Une automatisation CE complète demanderait un flux de promotion Git ou une intégration de l'API Portainer distincte ; ce pipeline n'exige pas un token administrateur global dans GitLab.
+Le runner Node doit joindre le proxy/webhook via le réseau d'administration/VPN, avec un certificat TLS fiable. N'expose pas l'administration Portainer à Internet pour résoudre la connectivité. Ne place jamais les secrets dans une URL ou dans le dépôt ; configure aussi les journaux du reverse proxy pour ne pas conserver les chemins de webhook secrets.
+
+Crée une **stack staging distincte** avec le même Compose, mais ses propres valeurs : `ATELIER_CONTAINER=atelier-staging-orchestrator`, `ATELIER_SANDBOX_NET=atelier-staging-sandbox`, `ATELIER_WORKDIR=/srv/atelier-staging/work`, `ATELIER_PORT=127.0.0.1:8083`, `ATELIER_APPS_PORT=8084`, un domaine Atelier et un domaine applicatif staging distincts. Crée son dossier sur l'hôte, son callback Keycloak et ses certificats. Conserve un volume de données propre à cette stack et sa propre clé maître ; adapte le pool réseau si nécessaire. Ne partage ni les données ni les secrets de production avec staging.
+
+Le job transmet les références d'images épinglées au commit dans les paramètres du webhook ; le proxy MyRole les transmet à Portainer. Le Compose et les personnalisations réseau restent dans Portainer. Vérifie lors de la première livraison que ta version de Portainer applique ces paramètres et les conserve pour les mises à jour suivantes.
+
+La sauvegarde MQTT, la promotion `develop → main` et la revue IA spécifiques à MyRole 3 ne sont pas activées dans Atelier. La CI ne réalise ni sauvegarde automatique ni rollback automatique : prévoir une sauvegarde cohérente et terminer les agents actifs **avant de pousser** sur une référence déclenchant un déploiement. Un job vert signifie demande acceptée ; vérifier ensuite la version effective et la santé réelle.
 
 ## 9. Sauvegarder et revenir en arrière
 

@@ -1,10 +1,20 @@
-# GitLab auto-hébergé : voir docs/gitlab-portainer.md.
-# Les contrôles Node tournent sur un runner Docker ordinaire ; les tests Docker
-# utilisent un runner Shell protégé, dédié, distinct du serveur de production.
-stages: [check, integration, publish, deploy]
+include:
+  - project: myrole/ci-templates
+    ref: 9a47c54da0256171eaa59dca8afc9d94dd99a679
+    file: /buildkit.yml
+  - project: myrole/ci-templates
+    ref: 9a47c54da0256171eaa59dca8afc9d94dd99a679
+    file: /deploy.yml
+
+stages: [check, integration, build, deploy]
 
 workflow:
+  auto_cancel:
+    on_new_commit: interruptible
   rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH || $CI_COMMIT_BRANCH == "staging" || $CI_COMMIT_TAG'
+      auto_cancel:
+        on_new_commit: none
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS && $CI_PIPELINE_SOURCE == "push"'
       when: never
@@ -12,6 +22,15 @@ workflow:
 
 variables:
   PLATFORMS: linux/amd64
+  ORCHESTRATOR_IMAGE: $CI_REGISTRY_IMAGE/atelier
+  SANDBOX_IMAGE: $CI_REGISTRY_IMAGE/atelier-sandbox
+  ATELIER_RELEASE: commit-$CI_COMMIT_SHA
+
+default:
+  interruptible: true
+  retry:
+    max: 2
+    when: [runner_system_failure, stuck_or_timeout_failure]
 
 checks:
   stage: check
@@ -25,18 +44,21 @@ checks:
     - npm --prefix web test
     - npm --prefix web run build
     - node --test scripts/deploy-portainer.test.mjs
+    - node --test scripts/ci-build.test.mjs
 
 .docker-host:
   tags: [atelier-docker]
   resource_group: atelier-docker
   timeout: 45m
   rules:
+    - if: '$CI_COMMIT_REF_PROTECTED == "true" && $CI_COMMIT_BRANCH == "staging"'
     - if: '$CI_COMMIT_REF_PROTECTED == "true" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - if: '$CI_COMMIT_REF_PROTECTED == "true" && $CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/'
 
 integration:
   extends: .docker-host
   stage: integration
+  interruptible: false
   script:
     - export PATH="/opt/atelier-ci/bin:$PATH"
     - node -e 'if (Number(process.versions.node.split(".")[0]) < 24) process.exit(1)'
@@ -54,36 +76,52 @@ integration:
         -R "$(id -u):$(id -g)" /cleanup;
       fi
 
-images:
-  extends: .docker-host
-  stage: publish
+.atelier-build:
+  extends: .default-build
+  needs: [integration]
+  timeout: 45m
+  rules:
+    - if: '$CI_COMMIT_REF_PROTECTED == "true" && $CI_COMMIT_BRANCH == "staging"'
+    - if: '$CI_COMMIT_REF_PROTECTED == "true" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - if: '$CI_COMMIT_REF_PROTECTED == "true" && $CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/'
   script:
-    - |
-      set -euo pipefail
-      export DOCKER_CONFIG="$(mktemp -d)"
-      trap 'rm -rf "$DOCKER_CONFIG"' EXIT
-      printf '%s' "$CI_REGISTRY_PASSWORD" | docker login "$CI_REGISTRY" --username "$CI_REGISTRY_USER" --password-stdin
-      VERSION="$CI_COMMIT_SHA"
-      if [ -n "${CI_COMMIT_TAG:-}" ]; then VERSION="${CI_COMMIT_TAG#v}"; fi
-      ./scripts/release.sh "$CI_REGISTRY_IMAGE/atelier" "$VERSION" --push
-      printf 'ATELIER_RELEASE=%s\n' "$VERSION" > deployment.env
-  artifacts:
-    reports:
-      dotenv: deployment.env
+    - sh .gitlab/ci/build.sh
 
-# Facultatif : webhook de stack Web editor (Portainer BE). Absent sans variable.
-# Un tag protégé propose le déploiement ; ATELIER_AUTO_DEPLOY=1 le rend automatique.
-deploy-portainer:
-  stage: deploy
+build-orchestrator:
+  extends: .atelier-build
+  variables:
+    IMAGE: $ORCHESTRATOR_IMAGE
+    BUILD_CONTEXT: .
+    DOCKERFILE_DIR: orchestrator
+
+build-sandbox:
+  extends: .atelier-build
+  variables:
+    IMAGE: $SANDBOX_IMAGE
+    BUILD_CONTEXT: sandbox
+    DOCKERFILE_DIR: sandbox
+
+.atelier-deploy:
+  extends: .default-deploy
   image: node:24-bookworm
-  needs: [images]
-  resource_group: atelier-production
-  environment:
-    name: production
+  needs: [build-orchestrator, build-sandbox]
   script:
     - node scripts/deploy-portainer.mjs
+
+deploy:
+  extends: .atelier-deploy
+  variables:
+    DEPLOY_WEBHOOK_URL: $PORTAINER_WEBHOOK_URL
+    DEPLOY_WEBHOOK_SECRET: $PORTAINER_WEBHOOK_SECRET
   rules:
-    - if: '$CI_COMMIT_REF_PROTECTED == "true" && $CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/ && $PORTAINER_STACK_WEBHOOK && $ATELIER_AUTO_DEPLOY == "1"'
-    - if: '$CI_COMMIT_REF_PROTECTED == "true" && $CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/ && $PORTAINER_STACK_WEBHOOK'
-      when: manual
-      allow_failure: true
+    - if: '$CI_COMMIT_REF_PROTECTED == "true" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $PORTAINER_WEBHOOK_URL'
+    - if: '$CI_COMMIT_REF_PROTECTED == "true" && $CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/ && $PORTAINER_WEBHOOK_URL'
+
+deploy-staging:
+  extends: .atelier-deploy
+  variables:
+    DEPLOY_ENVIRONMENT: staging
+    DEPLOY_WEBHOOK_URL: $PORTAINER_STAGING_WEBHOOK_URL
+    DEPLOY_WEBHOOK_SECRET: $PORTAINER_STAGING_WEBHOOK_SECRET
+  rules:
+    - if: '$CI_COMMIT_REF_PROTECTED == "true" && $CI_COMMIT_BRANCH == "staging" && $PORTAINER_STAGING_WEBHOOK_URL'

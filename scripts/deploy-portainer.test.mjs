@@ -37,3 +37,27 @@ test("Portainer : un refus ou une erreur réseau ne divulgue pas le webhook", as
     (error) => !error.message.includes("test-secret") && /injoignable/.test(error.message));
   await assert.rejects(deploy(env, async () => ({ ok: false, status: 403 })), /HTTP 403/);
 });
+
+test("MyRole : webhook de staging, secret en header et images épinglées au commit", async () => {
+  const sha = "a".repeat(40);
+  await deploy({
+    ...env,
+    DEPLOY_WEBHOOK_URL: "https://proxy.example.com/api/stacks/webhooks/staging-id",
+    DEPLOY_WEBHOOK_SECRET: "test-header-secret",
+    ATELIER_RELEASE: `commit-${sha}`,
+  }, async (url, options) => {
+    assert.equal(url.hostname, "proxy.example.com");
+    assert.equal(url.pathname, "/api/stacks/webhooks/staging-id");
+    assert.equal(url.searchParams.get("ATELIER_IMAGE"), `${env.CI_REGISTRY_IMAGE}/atelier:commit-${sha}`);
+    assert.equal(url.searchParams.get("ATELIER_SANDBOX_IMAGE"), `${env.CI_REGISTRY_IMAGE}/atelier-sandbox:commit-${sha}`);
+    assert.equal(options.headers["x-webhook-secret"], "test-header-secret");
+    assert.equal(url.searchParams.has("secret"), false);
+    return { ok: true };
+  });
+});
+
+test("MyRole : une erreur ne divulgue ni le header secret ni l'URL", async () => {
+  await assert.rejects(deploy({ ...env, DEPLOY_WEBHOOK_SECRET: "test-header-secret" }, async () => {
+    throw Error(`test-header-secret ${env.PORTAINER_STACK_WEBHOOK}`);
+  }), (error) => !error.message.includes("test-header-secret") && !error.message.includes("test-secret"));
+});
