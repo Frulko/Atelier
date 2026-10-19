@@ -17,6 +17,21 @@
 | **M4** | Daily project budgets, per-call agent metering and technician questions via Discord/Telegram implemented; independent reviewer and organization kill switch remain pending | partial |
 | **SaaS** | See below | planned |
 
+## Current consolidation requests
+
+| Area | Status |
+|---|---|
+| Command lifecycle panel, task/build log exports and readable version/task labels | implemented |
+| Restricted npm installation after manifest changes | implemented; smoke test covers an existing lockfile and disabled install scripts |
+| Discord text/forum topics, optional forum tags and send-only webhooks | implemented; external Discord calls tested with stubs |
+| Reusing technician decisions after an agent restart | implemented; repeated tool call exercised by the Docker smoke test |
+| Opt-in task actions from project discussions and task Kanban | implemented |
+| Continuing new tasks on the base branch by default | pending; follow-up turns already reuse their task branch |
+| Adding an external origin and exporting managed projects to Git | pending |
+| Per-project custom domain configuration and DNS/TLS walkthrough | pending; platform wildcard application domains already supported |
+| S3 backup settings, coherent backups and verified restores | pending |
+| Multiple application services through constrained Compose, with database preservation | pending; the current runtime is a single application container with persistent data |
+
 ## Toward a multi-tenant SaaS
 
 Going from a team tool to a public platform is not an extension of M1: **the threat model changes**. You stop running a trusted team's code and start running code for customers who do not know each other.

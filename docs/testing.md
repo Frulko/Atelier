@@ -9,6 +9,11 @@ Three commands. All three must be green before a commit.
 | `npm run check` · `npm test` · `npm run build` | `web/` | Type-checks, runs the unit tests (formatting, roles, wording) and builds the web application | Node |
 | `./scripts/prod-test.sh` | repo root | Starts `docker-compose.prod.yml` with locally built images and checks it becomes healthy, serves the app and accepts the first sign-in | Docker |
 | `./scripts/smoke.sh` | repo root | End-to-end test of the whole stack in Docker, **no AI, no API key**. Also drives the web UI in a browser when Playwright is installed | Docker, Node 24 (+ `pip install playwright` and Chrome for the UI part) |
+| `node --test scripts/command-hooks.test.mjs` | repo root | Bash lifecycle events: launch, completion, failure, background state and interruption, without a model call | Node |
+
+The smoke stack also exercises the real npm installer with an existing lockfile followed by a manifest dependency change (`scripts/npm-lock-check.mjs`), while asserting installation scripts stay disabled and proxy URLs do not remain in the lockfile. Human-decision smoke tests deliberately replay the answered tool call after resume and require exactly one question. HTTP/unit tests cover forum topics, technician identity checks, send-only webhooks, safe configuration errors, opt-in chat tools, per-message action deduplication, role revocation, organization isolation and Kanban writes that leave execution state unchanged. Browser checks cover the Kanban selector/persistence, chat-to-task tool result and Discord text/forum/webhook fields. Discord requests use a stub; no real bot or webhook is contacted by these tests.
+
+The **Commandes** panel reuses task SSE in the task detail and its conversation. `commands.test.ts` checks correlation of parallel commands, follow-up turns, legacy Bash events and interruption. Pipeline tests check persisted agent/check command events and secret masking. Security tests check masking before truncation and terminal-control removal. The browser smoke opens the panel during a deliberately slow check, observes completion, toggles follow mode, closes with Escape and finds the same history in the task conversation. Plain discussions execute no shell commands. Claude SDK hook payloads are tested locally; live-provider command execution remains unverified.
 
 ## What is covered
 

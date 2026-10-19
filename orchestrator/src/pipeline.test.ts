@@ -21,6 +21,8 @@ if(args[0]!=='run')process.exit(0);
 const name=args[args.indexOf('--name')+1],tree=args[args.indexOf('-v')+1].replace(/:\\/work$/,'');
 if(name.includes('-agent')) {
   fs.appendFileSync(tree+'/NOTES.md','A useful change\\n');
+  console.log(JSON.stringify({type:'command_start',commandId:'tool1',command:'printf safe'}));
+  console.log(JSON.stringify({type:'command_result',commandId:'tool1',state:'completed',output:'token=atl_'+'a'.repeat(32)}));
   console.log(JSON.stringify({type:'result',ok:true,cost:0.01}));
 } else {
   fs.writeFileSync(${JSON.stringify(marker)},name);
@@ -64,6 +66,12 @@ test("successful checks still produce a proposal", async () => {
   const task = await execute("a0000001");
   assert.equal(task.status, "done");
   assert.equal(hasBranch(task.id), true);
+  const commands = d.getEvents(task.id).filter(e => e.type.startsWith("command_")).map(e => ({ type: e.type, ...JSON.parse(e.text) }));
+  assert.equal(commands.length, 4);
+  assert.equal(commands[0].command, "printf safe");
+  assert.match(commands[1].output, /masqué/);
+  assert.equal(commands[2].source, "Vérification");
+  assert.equal(commands[3].state, "completed");
 });
 test("cancellation during a successful check revokes capabilities and prevents push", async () => {
   const token = issueTaskToken("a0000002", org);

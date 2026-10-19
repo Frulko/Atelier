@@ -40,7 +40,7 @@ const WORDS: [string, string][] = [
 const FAQ: [string, string][] = [
   ["L'agent peut-il casser mon site ?", "Non : il travaille sur une copie, et rien n'est fusionné sans qu'une personne relise. Au pire, tu refuses la proposition."],
   ["Que devient ma demande si la vérification échoue ?", "L'agent la reçoit avec le message d'erreur et corrige, jusqu'à trois essais. Si elle échoue encore, la tâche est en échec et rien n'est envoyé."],
-  ["Quelle différence entre Discuter et Tâche ?", "Discuter ne modifie rien : l'assistant répond. Une tâche confie le travail à l'agent, qui modifie le code et prépare une proposition."],
+  ["Quelle différence entre Discuter et Tâche ?", "Discuter permet de poser des questions. Dans une discussion de projet, active les actions pour lancer ou ajuster une tâche directement. La tâche confie le travail à un agent, qui prépare une proposition dans son bac à sable."],
   ["Combien ça coûte ?", "Chaque tâche affiche le coût déclaré par l'agent. Un administrateur peut fixer un plafond mensuel pour l'organisation."],
   ["Qui voit mes discussions ?", "Toi seul : même un administrateur ne les voit pas. Les tâches, elles, sont visibles de toute l'équipe."],
 ];
@@ -56,7 +56,7 @@ export function GuidePage() {
       <div className="mb-10 grid gap-8 md:grid-cols-2">
         <Section title="Discuter ou Tâche ?">
           <Card className="grid gap-3 p-5 text-sm">
-            <p><strong>Discuter</strong> : un assistant répond, cite ses sources et t'aide à préparer une demande. Il ne modifie rien. Tes discussions sont privées.</p>
+            <p><strong>Discuter</strong> : un assistant répond et cite ses sources. Active les actions dans une discussion de projet pour lancer ou ajuster une tâche. Ta discussion reste privée ; les tâches déléguées sont visibles par l’équipe.</p>
             <p><strong>Tâche</strong> : l'agent modifie le code dans un bac à sable et prépare une proposition. Ensuite, écris-lui pour demander des ajustements : il reprend la même proposition.</p>
             <p className="text-muted">Une discussion peut devenir une tâche d'un clic : « Lancer comme tâche ».</p>
           </Card>

@@ -20,7 +20,7 @@ import { issueTaskToken, revokeTaskTokens } from "./tokens.ts";
 import { encrypt, decrypt } from "./vault.ts";
 import { body, HttpError } from "./http.ts";
 import { notify } from "./notifications.ts";
-import { assertSafeFiles, containsSecret, applicationCsp } from "./security.ts";
+import { assertSafeFiles, containsSecret, applicationCsp, taskLogRedactor } from "./security.ts";
 import { audit } from "./audit.ts";
 import { overBudget } from "./budget.ts";
 import { can } from "./access.ts";
@@ -136,10 +136,13 @@ export const productionUrl = (projectId: string) =>
 export const getRelease = (id: string, org: string) =>
   db.prepare("select * from releases where id=? and org_id=?").get(id, org) as
     Release | undefined;
-export const releaseJson = (r: Release) => {
+export const releaseJson = (r: Release, fullLog = false) => {
   const { runtime_json, ...visible } = r;
   return {
     ...visible,
+    log: fullLog ? r.log : r.log.slice(-2000),
+    number: (db.prepare("select count(*) as n from releases where project_id=? and rowid<=(select rowid from releases where id=?)").get(r.project_id, r.id) as { n: number }).n,
+    taskPrompt: r.task_id ? getTaskInOrg(r.task_id, r.org_id)?.prompt ?? null : null,
     url: releaseUrl(r.id),
     productionUrl: productionUrl(r.project_id),
     published: !!db
@@ -154,7 +157,7 @@ export const listReleases = (org: string, project: string) =>
         "select * from releases where org_id=? and project_id=? order by created_at desc limit 50",
       )
       .all(org, project) as Release[]
-  ).map(releaseJson);
+  ).map(r => releaseJson(r));
 const update = (id: string, patch: Partial<Release>) => {
   const keys = Object.keys(patch);
   db.prepare(
@@ -473,8 +476,15 @@ async function buildRelease(r: Release) {
   const job = `release-${r.id}`,
     name = `atelier-release-${r.id}`;
   let token = "";
+  let redact = (text: string) => text;
+  const log = (text: string) => {
+    const previous = getRelease(r.id, r.org_id)?.log ?? "";
+    update(r.id, { log: `${previous}\n[${new Date().toISOString()}] ${redact(text)}`.slice(-120000) });
+  };
   try {
-    update(r.id, { state: "building", log: "Copie de la version…" });
+    redact = await taskLogRedactor(r.org_id);
+    update(r.id, { state: "building", log: "" });
+    log(`Copie de la branche ${r.ref}…`);
     const project = getProjectById(r.project_id);
     if (!project) throw new Error("Projet supprimé.");
     const ws = await clone(
@@ -497,18 +507,23 @@ async function buildRelease(r: Release) {
       sources.stdout.split("\0").filter(Boolean),
       r.org_id,
     );
-    update(r.id, { sha, log: "Installation et vérification…" });
+    update(r.id, { sha });
+    log(`Version source : ${sha}. Installation npm…`);
     token = issueTaskToken(job, r.org_id);
-    await installDependencies(`${name}-install`, ws.tree, token);
+    await installDependencies(`${name}-install`, ws.tree, token, log);
     if (!project.check_cmd.trim() || project.check_cmd.trim() === "true")
       throw new Error(
         "Configure une véritable commande de vérification avant de publier.",
       );
-    const check = await runCheck(`${name}-check`, ws.tree, project.check_cmd);
+    log(`Vérification : ${project.check_cmd}`);
+    const check = await runCheck(`${name}-check`, ws.tree, project.check_cmd, text => redact(text));
+    log(check.output || (check.ok ? "Vérification réussie." : "Vérification échouée sans sortie."));
     if (!check.ok) throw new Error(`Vérification échouée : ${check.output}`);
     const runtime = JSON.parse(r.runtime_json) as Runtime;
     if (runtime.build && runtime.build !== project.check_cmd) {
-      const build = await runCheck(`${name}-build`, ws.tree, runtime.build);
+      log(`Build : ${runtime.build}`);
+      const build = await runCheck(`${name}-build`, ws.tree, runtime.build, text => redact(text));
+      log(build.output || (build.ok ? "Build réussi." : "Build échoué sans sortie."));
       if (!build.ok) throw new Error(`Build échoué : ${build.output}`);
     }
     const tracked = await run(
@@ -530,16 +545,16 @@ async function buildRelease(r: Release) {
     update(r.id, {
       sha,
       check_ok: 1,
-      log: "Démarrage et contrôle navigateur…",
     });
+    log("Démarrage et contrôle navigateur…");
     await startContainer(ready);
     await browserCheck(ready);
     update(r.id, {
       state: "ready",
       qa_ok: 1,
       error: null,
-      log: "Vérification, build et contrôle navigateur réussis.",
     });
+    log("Vérification, build et contrôle navigateur réussis.");
     notify(
       r.user_id,
       r.org_id,
@@ -578,8 +593,9 @@ async function buildRelease(r: Release) {
         }
     }
   } catch (e) {
-    const error = String((e as Error).message || e).slice(0, 3000);
-    update(r.id, { state: "failed", error, log: error });
+    const error = redact(String((e as Error).message || e)).slice(-6000);
+    update(r.id, { state: "failed", error });
+    log(`Échec : ${error}`);
     await run("docker", ["rm", "-f", `atelier-app-${r.id}`]).catch(() => {});
     await removeNetwork(r.id);
     notify(

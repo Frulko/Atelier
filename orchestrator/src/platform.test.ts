@@ -93,6 +93,33 @@ const fields = {
   max_runs_day: 2,
 };
 
+test("Kanban updates organization workflow without changing execution state, scoped to task owners/admins",async()=>{
+  const id="abc09991";
+  d.createTask(id,org,member.id,project,"Organiser le suivi");
+  const path=`/api/orgs/${org}/tasks/${id}`;
+  assert.equal((await api(bob.id,"PATCH",path,{boardColumn:"done"})).status,404);
+  assert.equal((await api(viewer.id,"PATCH",path,{boardColumn:"done"})).status,403);
+  assert.equal((await api(member.id,"PATCH",path,{boardColumn:"invalid"})).status,400);
+  assert.equal((await api(member.id,"PATCH",path,{boardColumn:"review"})).status,200);
+  assert.equal(d.getTask(id)!.board_column,"review");assert.equal(d.getTask(id)!.status,"queued");
+  assert.equal((await api(alice.id,"PATCH",path,{boardColumn:null})).status,200);
+  assert.equal(d.getTask(id)!.board_column,null);
+  d.updateTask(id,{status:"cancelled"});
+});
+
+test("task log exports mask credentials and remain scoped to the organization",async()=>{
+  const id="abc09992";
+  d.createTask(id,org,member.id,project,"Exporter le journal");
+  d.addEvent(id,"command_start",JSON.stringify({id:"c",command:"npm test",source:"Agent"}));
+  d.addEvent(id,"log","atl_"+"b".repeat(32));
+  const path=`/api/orgs/${org}/tasks/${id}/logs`;
+  assert.equal((await api(bob.id,"GET",path)).status,404);
+  const res=await api(member.id,"GET",path);
+  assert.equal(res.status,200);assert.match(res.headers.get("content-disposition")!,/attachment/);
+  const text=await res.text();assert.match(text,/npm test/);assert.match(text,/masqué/);assert.ok(!text.includes("atl_"));
+  d.updateTask(id,{status:"cancelled"});
+});
+
 test("cron: timezone and DST, five fields, bounds and invalid schedules", () => {
   const a = automationFields(fields);
   assert.equal(

@@ -159,6 +159,25 @@ test("capabilities: model tokens cannot install packages, npm tokens cannot call
   assert.equal((await send("/anthropic/v1/messages/batches", { "x-api-key": model })).status, 403);
 });
 
+test("guarded dependency installation requires a running, authorized task in the token organization", async()=>{
+  const route="/dependencies/install";
+  assert.equal((await send(route)).status,403);
+  assert.equal((await send(route,{authorization:`Bearer ${T.issueTaskToken("missing",orgA)}`})).status,403);
+  const project=db.insertProject({org_id:orgA,slug:"npm-tools",name:"Npm tools",repo:"/nonexistent.git",branch:"main",forge:"none",check_cmd:"true",engine:"claude",protected_paths:"[]",git_secret_id:null});
+  db.createTask("deed0011",orgA,owner.id,project,"Install dependencies");
+  const token=T.issueTaskToken("deed0011",orgA);
+  assert.equal((await send(route,{authorization:`Bearer ${token}`})).status,403);
+  db.updateTask("deed0011",{status:"running"});
+  assert.equal((await send(route,{authorization:`Bearer ${T.issueTaskToken("deed0011",orgA,"npm")}`})).status,403);
+  assert.equal((await send(route,{authorization:`Bearer ${T.issueTaskToken("deed0011",orgB)}`})).status,403);
+  const malformed=await fetch(base+route,{method:"POST",headers:{authorization:`Bearer ${token}`,"content-type":"application/json"},body:"{broken"});
+  assert.equal(malformed.status,400);
+  db.db.prepare("update memberships set role='viewer' where org_id=? and user_id=?").run(orgA,owner.id);
+  assert.equal((await send(route,{authorization:`Bearer ${token}`})).status,403);
+  db.db.prepare("update memberships set role='owner' where org_id=? and user_id=?").run(orgA,owner.id);
+  T.revokeTaskTokens("deed0011");db.updateTask("deed0011",{status:"cancelled"});
+});
+
 test("model request firewall rejects known secrets, Unicode escapes, headers and URLs before upstream", async () => {
   const t = T.issueTaskToken("firewall", orgA), n = before();
   const secret = "sk-ant-KEY-OF-A-0000";

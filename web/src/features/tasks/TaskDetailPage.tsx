@@ -13,6 +13,7 @@ import { useToast } from "../../components/ui/Toast";
 import { api } from "../../lib/api";
 import { useTaskEvents } from "../../lib/events";
 import { EventRow } from "./EventRow";
+import { CommandsButton } from "./CommandsButton";
 import { useScope } from "../../lib/scope";
 import { fmtDateTime, fmtDuration, fmtUsd, parseFiles, relTime } from "../../lib/format";
 import { isActive } from "../../lib/labels";
@@ -34,6 +35,7 @@ export function TaskDetailPage() {
   const q = useQuery(taskQuery(orgId, taskId));
   const t = q.data;
   const events = useTaskEvents(orgId, taskId);
+  const journal = events.filter(e => !e.type.startsWith("command_"));
   const bottom = useRef<HTMLDivElement>(null);
   const live = t ? isActive(t.status) : false;
 
@@ -73,6 +75,7 @@ export function TaskDetailPage() {
           <h1 className="font-display text-2xl leading-snug text-ink">{t.prompt}</h1>
         </div>
         <div className="flex flex-wrap gap-2">
+          <CommandsButton key={taskId} taskId={taskId} events={events} running={t.status === "running"} />
           {t.mr_url && <a href={t.mr_url} target="_blank" rel="noopener noreferrer"><Button variant="primary" icon={<ExternalLink className="size-4" />}>Ouvrir la proposition</Button></a>}
           {canCancel && <ConfirmButton variant="secondary" icon={<Square className="size-3.5" />} onConfirm={() => cancel.mutate()} loading={cancel.isPending}>Annuler</ConfirmButton>}
           {!live && isMember && t.status === "failed" && t.turn === 1 && t.pushed_sha && t.last_error && <Button onClick={() => resume.mutate()} loading={resume.isPending}>Reprendre la proposition</Button>}
@@ -104,8 +107,8 @@ export function TaskDetailPage() {
 
       <div className="grid gap-10 xl:grid-cols-[1.6fr_1fr]">
         <Section title={live ? "Journal en direct" : "Journal"} hint={live ? "Mis à jour en continu." : undefined} index={4}>
-          {events.length === 0 ? <Skeleton className="h-32" /> : (
-            <ol aria-live={live ? "polite" : "off"}>{events.map((e, i) => <EventRow key={e.id} e={e} last={i === events.length - 1} />)}</ol>
+          {journal.length === 0 ? <Skeleton className="h-32" /> : (
+            <ol aria-live={live ? "polite" : "off"}>{journal.map((e, i) => <EventRow key={e.id} e={e} last={i === journal.length - 1} />)}</ol>
           )}
           <div ref={bottom} />
         </Section>

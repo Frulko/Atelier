@@ -19,7 +19,7 @@ if (lock)
 const result = spawnSync(
   "npm",
   [
-    existsSync("/work/package-lock.json") ? "ci" : "install",
+    "install",
     "--ignore-scripts",
     "--no-audit",
     "--no-fund",

@@ -46,6 +46,17 @@ async function readStream(r: Response) {
 }
 const stored = (id: string) => db.getMessages(id).map((m) => ({ role: m.role, text: (JSON.parse(m.parts) as Part[]).map((p) => p.text ?? "").join(""), meta: m.meta ? JSON.parse(m.meta) : null }));
 
+test("chat actions can be enabled only by the private conversation owner on a project",async()=>{
+  const id=await newChat(),path=`${A}/conversations/${id}`;
+  assert.equal((await call(cAd,"PATCH",path,{actionsEnabled:true})).status,404);
+  assert.equal((await call(cM,"PATCH",path,{actionsEnabled:"yes"})).status,400);
+  assert.equal((await call(cM,"PATCH",path,{actionsEnabled:true})).status,200);
+  assert.equal(db.getConversationFor(id,orgA,max.id)!.actions_enabled,1);
+  assert.equal((await call(cM,"PATCH",path,{actionsEnabled:false})).status,200);
+  const standalone=await newChat(cM,null);
+  assert.equal((await call(cM,"PATCH",`${A}/conversations/${standalone}`,{actionsEnabled:true})).status,409);
+});
+
 test("créer une discussion : membre oui, lecteur non ; projet d'une autre organisation refusé ; titre par défaut", async () => {
   const r = await call(cM, "POST", `${A}/conversations`, { mode: "chat", projectId: pA });
   assert.equal(r.status, 201);

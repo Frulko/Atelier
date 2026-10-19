@@ -4,6 +4,7 @@ import https from "node:https";
 import { isIP } from "node:net";
 import { addressAllowed } from "./health.ts";
 import { cfg } from "./config.ts";
+import { stripVTControlCharacters } from "node:util";
 
 export async function repositoryAddresses(raw: string) {
   const url = new URL(raw);
@@ -124,11 +125,30 @@ export function containsSecret(text: string, known: string[] = []) {
       /\bgh[pousr]_[A-Za-z0-9]{30,}\b/,
       /\bgithub_pat_[A-Za-z0-9_]{40,}\b/,
       /\bglpat-[A-Za-z0-9_-]{20,}\b/,
+      /https:\/\/(?:discord\.com|discordapp\.com)\/api(?:\/v\d+)?\/webhooks\/\d+\/[\w-]+/i,
       /\bsk-(?:ant-api\d+-|proj-|live_)[A-Za-z0-9_-]{20,}\b/,
       /\bsk_live_[A-Za-z0-9]{20,}\b/,
       /(?:_authToken|api_key|client_secret)\s*[=:]\s*["']?(?!\$|<|process\.|os\.|your[-_]|example|changeme)[A-Za-z0-9_/-]{32,}/i,
     ].some((pattern) => pattern.test(text))
   );
+}
+
+export function safeLogText(text: string, known: string[] = [], limit = 32000) {
+  const plain = stripVTControlCharacters(text).replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "");
+  if (containsSecret(plain, known)) return "[Contenu masqué : secret potentiel]";
+  return plain.length > limit ? plain.slice(0, limit) + "\n[Sortie tronquée]" : plain;
+}
+
+export async function taskLogRedactor(orgId: string) {
+  const { db } = await import("./db.ts"), { decrypt } = await import("./vault.ts");
+  const known = await protectedValues(orgId);
+  for (const s of db.prepare("select id,ciphertext from secrets where org_id=?").all(orgId) as { id: string; ciphertext: Buffer }[])
+    known.push(decrypt(s.ciphertext, orgId, s.id));
+  if (db.prepare("select 1 from sqlite_master where name='project_environment'").get()) {
+    for (const s of db.prepare("select project_id,environment,name,ciphertext from project_environment where org_id=?").all(orgId) as { project_id: string; environment: string; name: string; ciphertext: Buffer }[])
+      known.push(decrypt(s.ciphertext, orgId, `${s.project_id}:${s.environment}:${s.name}`));
+  }
+  return (text: string, limit = 32000) => safeLogText(text, known, limit);
 }
 
 export async function assertSafeFiles(
@@ -248,5 +268,8 @@ async function protectedValues(orgId:string) {
   const {db}=await import("./db.ts"), {decrypt}=await import("./vault.ts");
   const platform=[process.env.ATELIER_OIDC_CLIENT_SECRET,process.env.ATELIER_MASTER_KEY,process.env.ATELIER_PASSWORD,...Object.values(cfg.providerKeys),process.env.GIT_TOKEN].filter((v):v is string=>!!v && v.length>=8);
   if(!db.prepare("select 1 from sqlite_master where name='human_channels'").get())return platform;
-  return platform.concat((db.prepare("select id,ciphertext from human_channels where org_id=?").all(orgId) as {id:string;ciphertext:Buffer}[]).map(c=>decrypt(c.ciphertext,orgId,`human:${c.id}`)));
+  return platform.concat((db.prepare("select id,ciphertext from human_channels where org_id=?").all(orgId) as {id:string;ciphertext:Buffer}[]).flatMap(c=>{
+    const value=decrypt(c.ciphertext,orgId,`human:${c.id}`);
+    return /^https:\/\/discord\.com\/api(?:\/v10)?\/webhooks\//.test(value)?[value,value.split("/").at(-1)!]:[value];
+  }));
 }

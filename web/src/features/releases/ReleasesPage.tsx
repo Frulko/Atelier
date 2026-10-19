@@ -1,6 +1,8 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { ExternalLink, Globe2, Play, RotateCcw, Rocket } from "lucide-react";
 import { useState } from "react";
+import { Link } from "@tanstack/react-router";
+import { Dialog } from "../../components/ui/Dialog";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Card, Section } from "../../components/ui/Card";
@@ -85,7 +87,8 @@ export function PreviewPanel({
     q = useQuery(releasesQuery(orgId, projectId));
   const [selected, setSelected] = useState<string | null>(null),
     [mobile, setMobile] = useState(false),
-    [reviewed, setReviewed] = useState(false);
+    [reviewed, setReviewed] = useState(false),
+    [logsOpen, setLogsOpen] = useState(false);
   const versions = q.data?.filter((r) => !taskId || r.task_id === taskId) ?? [],
     current = versions.find((r) => r.id === selected) ?? versions[0];
   const access = useQuery({
@@ -177,9 +180,10 @@ export function PreviewPanel({
             >
               {current.published ? "En production" : STATE[current.state]}
             </Badge>
-            <span className="font-mono text-xs text-muted">
-              {current.sha?.slice(0, 8) ?? "Version en préparation"}
+            <span className="text-sm font-medium">
+              Version {current.number}
             </span>
+            <Button size="sm" onClick={()=>setLogsOpen(true)}>Voir les logs</Button>
             {current.state === "ready" && (
               <button
                 type="button"
@@ -190,6 +194,15 @@ export function PreviewPanel({
               </button>
             )}
           </div>
+          <div className="grid gap-1 px-4 pb-3 text-xs text-muted">
+            <p className="break-words">{current.taskPrompt ?? "Construction depuis la branche du projet"}</p>
+            <p className="break-all">Branche : <code>{current.ref}</code>{current.sha && <> · Commit : <code>{current.sha.slice(0,8)}</code></>}</p>
+            {current.task_id && <Link to="/o/$orgId/tasks/$taskId" params={{orgId,taskId:current.task_id}} className="text-accent hover:underline">Voir la tâche à l’origine de cette version</Link>}
+            {current.state==="failed" && <p className="text-warn">Cette construction a échoué. La version déjà en production reste en ligne. Ouvre les logs pour voir l’étape et la commande concernées.</p>}
+          </div>
+          <Dialog open={logsOpen} onClose={()=>setLogsOpen(false)} title={`Logs · Version ${current.number}`} wide>
+            <ReleaseLogs release={current}/>
+          </Dialog>
           {current.state === "ready" && current.url ? (
             <div className="flex min-h-[32rem] flex-1 justify-center bg-subtle p-2">
               <iframe
@@ -214,7 +227,7 @@ export function PreviewPanel({
           <div className="grid gap-3 border-t border-line p-4">
             <div className="flex flex-wrap gap-3 text-xs text-muted">
               <span>
-                Vérification : {current.check_ok ? "réussie" : "en attente"}
+                Vérification : {current.check_ok ? "réussie" : current.state==="failed"?"non validée":"en attente"}
               </span>
               <span>
                 Navigateur : {current.qa_ok ? "réussi" : "en attente"}
@@ -300,9 +313,8 @@ export function PreviewPanel({
                     setReviewed(false);
                   }}
                 >
-                  <span className="font-mono">
-                    {r.sha?.slice(0, 8) ?? r.id.slice(0, 8)}
-                  </span>
+                  <span className="shrink-0">Version {r.number}</span>
+                  <span className="truncate" title={r.taskPrompt??r.ref}>{r.taskPrompt??r.ref}</span>
                   <span>{fmtDate(r.created_at)}</span>
                   <span>{r.published ? "En ligne" : STATE[r.state]}</span>
                 </button>
@@ -327,6 +339,16 @@ export function PreviewPanel({
       )}
     </Card>
   );
+}
+function ReleaseLogs({release}:{release:Release}) {
+  const {orgId}=useOrg();
+  const q=useQuery({queryKey:["org",orgId,"release-log",release.id],queryFn:()=>api.get<Release>(`/api/orgs/${orgId}/releases/${release.id}`),refetchInterval:release.state==="building"||release.state==="queued"?2000:false});
+  return <div className="grid gap-3">
+    <a href={`/api/orgs/${orgId}/releases/${release.id}/logs`} download className="text-sm font-medium text-accent hover:underline">Télécharger le journal complet (.log)</a>
+    <FormError error={q.error}/>
+    <pre className="max-h-[60dvh] overflow-auto whitespace-pre-wrap break-words rounded-md bg-subtle p-4 font-mono text-xs">{q.data?.log||release.log||"Aucun log pour le moment."}</pre>
+    <p className="text-xs text-muted">Journal de construction horodaté, limité à 120 000 caractères. Les secrets détectés sont masqués.</p>
+  </div>;
 }
 function RuntimeForm({
   projectId,

@@ -45,6 +45,7 @@ checks:
     - npm --prefix web run build
     - node --test scripts/deploy-portainer.test.mjs
     - node --test scripts/ci-build.test.mjs
+    - node --test scripts/command-hooks.test.mjs
 
 .docker-host:
   tags: [atelier-docker]

@@ -15,6 +15,7 @@ import { invalidateOrg, taskQuery } from "../../lib/queries";
 import type { ConversationDetail } from "../../lib/types";
 import { useOrg } from "../../lib/useOrg";
 import { EventRow } from "../tasks/EventRow";
+import { CommandsButton } from "../tasks/CommandsButton";
 import { ScopedLink } from "../../components/ui/ScopedLink";
 import { useScope } from "../../lib/scope";
 
@@ -54,6 +55,7 @@ export function TaskThread({ detail }: { detail: ConversationDetail }) {
           {t.branch && <span className="flex items-center gap-1.5 font-mono text-[13px]"><GitBranch className="size-3.5 text-muted" aria-hidden />{t.branch}</span>}
           {t.mr_url && <a href={t.mr_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 font-medium text-accent hover:underline">Demande de fusion <ExternalLink className="size-3.5" aria-hidden /></a>}
           <span className="text-muted">Coût déclaré : <span className="tnum text-ink">{t.cost ? fmtUsd(t.cost) : "—"}</span></span>
+          <CommandsButton key={taskId} taskId={taskId} events={events} running={t.status === "running"} />
           {t.status === "done" && canFollowUp && c.projectId && (
             <Link to="/o/$orgId/projects/$projectId/editor" params={{ orgId, projectId: c.projectId }} search={{ task: taskId }} className="text-[13px] font-medium text-accent hover:underline">Ouvrir dans l'éditeur</Link>
           )}
@@ -64,7 +66,7 @@ export function TaskThread({ detail }: { detail: ConversationDetail }) {
         <ol className="mx-auto grid max-w-3xl gap-8" aria-live={live ? "polite" : "off"}>
           {users.map((m, i) => {
             const turn = i + 1;
-            const mine = events.filter((e) => turnOf(e) === turn);
+            const mine = events.filter((e) => turnOf(e) === turn && !e.type.startsWith("command_"));
             return (
               <li key={m.id} className="grid gap-4" data-testid={`turn-${turn}`}>
                 <div className="ml-auto max-w-[85%] whitespace-pre-wrap rounded-lg bg-secondary px-4 py-3 text-sm">{m.parts.map((p) => (p.type === "text" ? p.text : "")).join("")}</div>

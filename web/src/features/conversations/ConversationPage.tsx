@@ -1,9 +1,9 @@
 import { useChat } from "@ai-sdk/react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
-import { DefaultChatTransport, type UIMessage } from "ai";
+import { DefaultChatTransport, isToolUIPart, getToolName, type UIMessage } from "ai";
 import { Bot, BookIcon, ChevronDownIcon, Copy, ListChecks, Paperclip, RotateCw, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Attachment, AttachmentInfo, AttachmentPreview, AttachmentRemove, Attachments } from "@/components/ai-elements/attachments";
 import { Conversation as ChatScroll, ConversationContent, ConversationEmptyState, ConversationScrollButton } from "@/components/ai-elements/conversation";
 import { Message, MessageAction, MessageActions, MessageContent, MessageResponse } from "@/components/ai-elements/message";
@@ -14,10 +14,11 @@ import {
 import { Sources, SourcesContent, SourcesTrigger } from "@/components/ai-elements/sources";
 import { Button } from "../../components/ui/Button";
 import { Card, PageHeader } from "../../components/ui/Card";
+import { StatusPill } from "../../components/ui/Badge";
 import { ErrorBox, errorText, FormError, Skeleton } from "../../components/ui/Feedback";
 import { useToast } from "../../components/ui/Toast";
 import { api } from "../../lib/api";
-import { conversationQuery, invalidateOrg } from "../../lib/queries";
+import { conversationQuery, invalidateOrg, taskQuery } from "../../lib/queries";
 import type { Conversation } from "../../lib/types";
 import { useOrg } from "../../lib/useOrg";
 import { TaskThread } from "./TaskThread";
@@ -62,6 +63,11 @@ const ATTACHED_TEXT = /^Fichier joint « (.+?) » :\n/;
 const ACCEPT = "image/png,image/jpeg,image/gif,image/webp,application/pdf,text/*,.md,.csv,.json,.yml,.yaml,.xml,.txt";
 const FILE_ERRORS = { max_files: "4 fichiers au plus par message.", max_file_size: "Un fichier dépasse 4 Mo.", accept: "Type de fichier non accepté (images, PDF, texte)." };
 
+function ActionTask({taskId,prompt}:{taskId:string;prompt?:string}) {
+  const {orgId}=useOrg(),q=useQuery(taskQuery(orgId,taskId));
+  return <><p>{q.data?.prompt??prompt}</p><div className="flex flex-wrap items-center gap-2">{q.data?<><StatusPill status={q.data.status}/>{q.data.waiting_question_id && <span className="text-xs text-warn">Décision du technicien requise</span>}</>:<span className="text-xs text-muted">Chargement du suivi…</span>}</div><FormError error={q.error}/><Link to="/o/$orgId/tasks/$taskId" params={{orgId,taskId}} className="font-medium text-accent hover:underline">Voir la tâche, les commandes et les logs</Link></>;
+}
+
 function MessageBody({ message }: { message: UIMessage }) {
   const files = message.parts.filter((p) => p.type === "file");
   return (
@@ -74,6 +80,11 @@ function MessageBody({ message }: { message: UIMessage }) {
         </Attachments>
       )}
       {message.parts.map((p, i) => {
+        if(isToolUIPart(p)) {
+          const label=getToolName(p)==="task_status"?"Suivi de la tâche":getToolName(p)==="follow_up_task"?"Ajustement de la tâche":"Action de l’agent";
+          const output=p.state==="output-available"?p.output as {taskId?:string;prompt?:string;status?:string;waitingForTechnician?:boolean}:undefined;
+          return <div key={i} className="my-2 grid gap-2 rounded-lg border border-line bg-subtle p-4 text-sm"><p className="font-medium">{label}</p>{output?.taskId?<ActionTask taskId={output.taskId} prompt={output.prompt}/>:<p className="text-xs text-muted">{p.state==="output-error"?p.errorText:"Transmission à l’agent…"}</p>}</div>;
+        }
         if (p.type !== "text") return null;
         const attached = message.role === "user" ? ATTACHED_TEXT.exec(p.text) : null;
         if (attached) return <span key={i} className="inline-flex w-fit items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs"><Paperclip className="size-3.5" aria-hidden />{attached[1]}</span>;
@@ -98,7 +109,7 @@ const textOf = (m: UIMessage) => m.parts.map((p) => (p.type === "text" ? p.text 
 const withoutFiles = (t: string) => t.replace(/Fichier joint « .+? » :\n(`{3,})\n[\s\S]*?\n\1\s*/g, "").trim();
 
 function ChatWindow({ conversation, initial }: { conversation: Conversation; initial: UIMessage[] }) {
-  const { orgId } = useOrg();
+  const { orgId, isMember } = useOrg();
   const search = useSearch({ strict: false }) as { first?: string };
   const scope = useScope();
   const navigate = useNavigate();
@@ -113,6 +124,13 @@ function ChatWindow({ conversation, initial }: { conversation: Conversation; ini
     onFinish: () => { invalidateOrg(orgId, "conversations"); invalidateOrg(orgId, "conversation", conversation.id); }, // le titre vient d'être créé par le serveur
   });
   const busy = status === "submitted" || status === "streaming";
+  const [actionsEnabled,setActionsEnabled]=useState(conversation.actionsEnabled);
+  useEffect(()=>setActionsEnabled(conversation.actionsEnabled),[conversation.actionsEnabled]);
+  const actions=useMutation({
+    mutationFn:(enabled:boolean)=>api.patch(`/api/orgs/${orgId}/conversations/${conversation.id}`,{actionsEnabled:enabled}),
+    onError:()=>setActionsEnabled(conversation.actionsEnabled),
+    onSettled:()=>invalidateOrg(orgId,"conversation",conversation.id),
+  });
 
   const sent = useRef(false);
   useEffect(() => {
@@ -133,9 +151,14 @@ function ChatWindow({ conversation, initial }: { conversation: Conversation; ini
 
   return (
     <Card className="flex h-[calc(100dvh-16rem)] min-h-[28rem] flex-col overflow-hidden">
+      <div className="grid gap-1 border-b border-line px-5 py-3 text-xs text-muted">
+        {conversation.projectId && isMember?<label className="flex items-center gap-2 text-sm font-medium text-ink"><input type="checkbox" checked={actionsEnabled} disabled={busy||actions.isPending} onChange={e=>{setActionsEnabled(e.target.checked);actions.mutate(e.target.checked);}}/>Autoriser les actions de l’agent</label>:<p>Rattache une nouvelle discussion à un projet pour lancer des actions.</p>}
+        {conversation.projectId && <p>{conversation.actionsEnabled?"L’assistant peut lancer et ajuster des tâches sur ce projet. Leur contexte inclut cette discussion. Elles continuent en arrière-plan avec les budgets et permissions du projet.":"Active les actions pour demander un travail directement dans cette discussion."}</p>}
+        <FormError error={actions.error}/>
+      </div>
       <ChatScroll className="flex-1">
         <ConversationContent className="mx-auto w-full max-w-3xl gap-7 px-5 py-8 sm:px-8">
-          {messages.length === 0 && <ConversationEmptyState icon={<Bot className="size-6" />} title="Pose ta question" description="L'assistant connaît les connaissances de l'organisation. Il ne peut pas modifier le code : pour cela, lance une tâche." />}
+          {messages.length === 0 && <ConversationEmptyState icon={<Bot className="size-6" />} title="Pose ta question" description={conversation.actionsEnabled?"Demande une analyse ou une modification : l’assistant peut confier ce travail à un agent du projet.":"L’assistant connaît les connaissances de l’organisation. Active les actions pour lui confier un travail sur ce projet."} />}
           {messages.map((m) => {
             const sources = (m.metadata as { sources?: { id: string; title: string }[] } | undefined)?.sources;
             return (

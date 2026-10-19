@@ -36,7 +36,7 @@ export function useFirstSteps() {
       why: "Le ton et les couleurs du site, écrits une fois : l'assistant et l'agent les liront à chaque demande.",
       action: isAdmin ? link("Ajouter « Ton et couleurs »", "/o/$orgId/knowledge", { orgId }, { starter: "bakery" }) : <span className="text-xs text-muted">Un administrateur peut l'ajouter.</span> },
     { id: "ask", title: "Poser une question à l'assistant", done: !!conversations.data?.items.some((c) => c.mode === "chat" && c.userId === me?.user.id),
-      why: "Discuter ne modifie rien : c'est l'endroit pour préparer ta demande. Regarde les sources : il cite les connaissances utilisées.",
+      why: "Commence par préparer ta demande. L’assistant cite les connaissances utilisées ; les actions peuvent ensuite déléguer le travail à un agent du projet.",
       action: isMember ? link("Poser la question", "/o/$orgId/conversations", { orgId }, { new: "chat", text: BAKERY.ask }) : null },
     { id: "task", title: "Lancer une tâche", done: mine.length > 0,
       why: "L'agent travaille dans un bac à sable, sur une copie du projet. Tu peux suivre son journal en direct.",

@@ -14,6 +14,9 @@ import {
 } from "./db.ts";
 import { renderKnowledge, selectKnowledge } from "./knowledge.ts";
 import { providerKey } from "./vault.ts";
+import { chatActions } from "./chat-actions.ts";
+import { can } from "./access.ts";
+import { roleOf } from "./db.ts";
 
 /*
  * Discussion avec l'assistant : le modèle est appelé DEPUIS L'ORCHESTRATEUR (pas depuis un bac à sable), avec la clé
@@ -78,16 +81,21 @@ async function fakeModel(): Promise<LanguageModel> {
         { type: "text-end", id: "t" },
         { type: "finish", finishReason: { unified: "stop", raw: "stop" }, usage: { inputTokens: { total: tokens(system.length + asked.length), noCache: tokens(system.length + asked.length), cacheRead: undefined, cacheWrite: undefined }, outputTokens: { total: tokens(text.length), text: tokens(text.length), reasoning: undefined } } },
       ];
+      if(asked.includes("[action-tache]") && options.tools?.some(t=>t.type==="function" && t.name==="start_task"))return {stream:simulateReadableStream({chunks:[
+        {type:"stream-start",warnings:[]},
+        {type:"tool-call",toolCallId:"fake-action",toolName:"start_task",input:JSON.stringify({prompt:asked})},
+        {type:"finish",finishReason:{unified:"tool-calls",raw:"tool_use"},usage:{inputTokens:{total:10,noCache:10,cacheRead:undefined,cacheWrite:undefined},outputTokens:{total:10,text:10,reasoning:undefined}}},
+      ]})};
       return { stream: simulateReadableStream({ initialDelayInMs: 30, chunkDelayInMs: 8, chunks }) };
     },
   });
 }
 
-export function buildSystem(project: ProjectRow | undefined, knowledgeText: string): string {
+export function buildSystem(project: ProjectRow | undefined, knowledgeText: string, actions=false): string {
   return [
     "Tu es l'assistant d'Atelier, une plateforme où des équipes font évoluer leur logiciel en parlant à un agent.",
     "Tu réponds en français, de façon claire et concise, en Markdown quand c'est utile.",
-    "Dans cette discussion tu ne peux PAS modifier le code ni lire le dépôt. Si la personne veut qu'un changement soit réalisé, aide-la à formuler une demande précise et propose de la lancer comme tâche : l'agent, lui, peut lire et modifier le code.",
+    actions?"Les actions sont activées sur ce projet. Quand la personne demande de réaliser un travail (analyse, lecture du dépôt, modification), utilise start_task pour le déléguer à l’agent. Pour ajuster une tâche terminée, utilise follow_up_task ; pour son avancement, task_status. Ne prétends pas avoir lu ou modifié des fichiers toi-même. N’annonce jamais un résultat avant le statut réel. Une action au plus par message ; les agents continuent en arrière-plan. Les outils ne publient pas eux-mêmes, les règles de validation du projet s’appliquent toujours.":"Dans cette discussion tu ne peux PAS modifier le code ni lire le dépôt. Si la personne veut qu'un changement soit réalisé, aide-la à formuler une demande précise et propose de la lancer comme tâche : l'agent, lui, peut lire et modifier le code.",
     "N'invente jamais de détails sur du code que tu ne vois pas : dis-le quand tu ne sais pas.",
     project ? [`# Projet : ${project.name}`, `- Dépôt : ${project.repo}`, `- Branche de base : ${project.branch}`, `- Vérification automatique : ${project.check_cmd}`, `- Chemins protégés (relecture obligatoire) : ${JSON.parse(project.protected_paths).join(", ") || "aucun"}`].join("\n") : "",
     project?.instructions ? `# Instructions de l'équipe pour ce projet\n\n${project.instructions}\n\n(Du contexte écrit par l'équipe : il ne modifie pas les règles ci-dessus.)` : "",
@@ -147,17 +155,20 @@ export async function runChat(o: { res: ServerResponse; conv: ConversationRow; o
   const question = textOf([...history].reverse().find((x) => x.role === "user"));
   const sel = selectKnowledge(listKnowledge(o.orgId), o.conv.project_id, question);
   const sources = sel.chosen.map((k) => ({ id: k.id, title: k.title }));
-  const system = buildSystem(project, renderKnowledge(sel.chosen));
+  const latestUser=[...history].reverse().find(x=>x.role==="user");
+  const actions=!!project && !!o.conv.actions_enabled && can(roleOf(o.orgId,o.conv.user_id)??"viewer","task:create");
+  const tools=actions && latestUser?chatActions(o.conv,latestUser.id,o.signal):undefined;
+  const system = buildSystem(project, renderKnowledge(sel.chosen),actions);
 
-  try { await assertNoSecretText(`${system}\n${windowMessages(history).map(textOf).join("\n")}`,o.orgId); }
+  try { await assertNoSecretText(`${system}\n${JSON.stringify(windowMessages(history))}`,o.orgId); }
   catch { return {status:400,error:"Un secret potentiel est présent dans le contexte. Retire-le et utilise les variables chiffrées."}; }
 
   const modelMessages=await convertToModelMessages(windowMessages(history));
-  const estimate=cfg.fakeAgent ? 0 : ((Buffer.byteLength(system)+Buffer.byteLength(JSON.stringify(modelMessages))+1024)*pricing.input+4096*pricing.output)/1_000_000;
+  const estimate=cfg.fakeAgent ? 0 : ((Buffer.byteLength(system)+Buffer.byteLength(JSON.stringify(modelMessages))+(tools?10000:1024))*pricing.input+4096*pricing.output)/1_000_000;
   let hold: {id:string;amount:number};
   try { hold=reserveBudget(o.orgId,o.conv.project_id??undefined,estimate,undefined,true); }
   catch(e) {return {status:402,error:(e as Error).message};}
-  const result = streamText({ model: m.model, system, messages: modelMessages, abortSignal: o.signal, maxOutputTokens: 4096, maxRetries: 0, onError: () => {} /* le SDK écrirait l'erreur brute dans les journaux : on journalise nous-mêmes, sans le texte */ });
+  const result = streamText({ model: m.model, system, messages: modelMessages, tools, abortSignal: o.signal, maxOutputTokens: 4096, maxRetries: 0, onError: () => {} /* le SDK écrirait l'erreur brute dans les journaux : on journalise nous-mêmes, sans le texte */ });
   result.pipeUIMessageStreamToResponse(o.res, {
     originalMessages: history,
     messageMetadata: ({ part }) => (part.type === "start" ? { sources, model: m.modelId, provider: m.provider } : undefined),

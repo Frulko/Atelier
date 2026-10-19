@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ripgrep ca-cert
 WORKDIR /opt/runner
 COPY package.json ./
 RUN npm install --omit=dev --no-audit --no-fund
-COPY runner.mjs install.mjs serve.mjs qa.mjs ./
+COPY runner.mjs commands.mjs install.mjs serve.mjs qa.mjs ./
 # uid 1000 : l'utilisateur "node" ; claude refuse de tourner en root avec bypassPermissions.
 USER node
 WORKDIR /work

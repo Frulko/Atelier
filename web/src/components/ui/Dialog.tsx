@@ -13,6 +13,7 @@ export function Dialog({ open, onClose, title, description, children, wide }: { 
   return (
     <dialog
       ref={ref}
+      aria-label={title}
       onClose={onClose}
       onClick={(e) => { if (e.target === ref.current) onClose(); }}
       className={`m-auto rounded-xl border-0 bg-surface p-0 text-ink shadow-pop backdrop:bg-black/50 backdrop:backdrop-blur-[2px] ${wide ? "w-[min(92vw,44rem)]" : "w-[min(92vw,30rem)]"}`}

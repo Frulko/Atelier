@@ -8,7 +8,7 @@ import { issueTaskToken, revokeTaskTokens } from "./tokens.ts";
 import { clone, changedFiles, commitAndPush, openMergeRequest, cleanup, workspace, revision, trackedPaths } from "./git.ts";
 import { runAgent, runCheck, kill, installDependencies } from "./sandbox.ts";
 
-import { assertSafeFiles, assertNoSecretText } from "./security.ts";
+import { assertSafeFiles, assertNoSecretText, safeLogText, taskLogRedactor } from "./security.ts";
 import { taskContext } from "./task-context.ts";
 import { notifyTask } from "./notifications.ts";
 import { queueRelease, runtimeOf } from "./releases.ts";
@@ -47,7 +47,15 @@ async function execute(id: string) {
     if(q && (q.state==="pending" || (q.kind==="budget" && q.answer==="2" && q.expires_at>Date.now())))return;
   }
   let keepWorkspace=false;
-  const log = (type: string, text: string) => addEvent(id, type, text);
+  let redact = (text: string, limit?: number) => safeLogText(text, [], limit);
+  const log = (type: string, text: string) => addEvent(id, type, redact(text));
+  const command = (type: string, data: { id: string; command?: string; output?: string; state?: string; source?: string }) => {
+    if (!data.id || data.id.length > 200 || redact(data.id) !== data.id) return;
+    addEvent(id, type, JSON.stringify({ ...data,
+      command: data.command === undefined ? undefined : redact(data.command, 8000),
+      output: data.output === undefined ? undefined : redact(data.output),
+    }));
+  };
   const branch = `atelier/${id}`;
   let hold: {id:string;amount:number} | undefined;
   let agentStarted=false, reported=true;
@@ -60,6 +68,7 @@ async function execute(id: string) {
     if (!role || !can(role, "task:create")) throw new Error("Les droits nécessaires à cette exécution ont été retirés.");
   };
   try {
+    redact = await taskLogRedactor(task.org_id!);
     assertActive();
     if(task.last_error?.includes("question technique a expiré"))throw new Error(task.last_error);
     if (overBudget(task.org_id!)) throw new Error("Budget mensuel épuisé.");
@@ -111,7 +120,16 @@ async function execute(id: string) {
       const remaining=hold.amount-(cost-task.cost);
       if(remaining<0.000001) throw new Error("Budget de cette exécution épuisé.");
       agentStarted=true; reported=false;
-      const r = await runAgent({ name, tree: ws.tree, prompt, engine: p.engine, token, knowledge, instructions: p.instructions, model: p.agentModel, subagentModel:p.subagentModel, maxTurns: p.agentMaxTurns, budgetUsd: remaining, onEvent: (e) => log(e.type, [e.text, e.name, e.detail].filter(Boolean).join(" ")) });
+      const r = await runAgent({ name, tree: ws.tree, prompt, engine: p.engine, token, knowledge, instructions: p.instructions, model: p.agentModel, subagentModel:p.subagentModel, maxTurns: p.agentMaxTurns, budgetUsd: remaining, onEvent: (e) => {
+        if ((e.type === "command_start" || e.type === "command_result") && typeof e.commandId === "string") {
+          command(e.type, { id: `${name}:${e.commandId}`, command: typeof e.command === "string" ? e.command : undefined,
+            output: typeof e.output === "string" ? e.output : undefined, state: e.state === "failed" || e.state === "interrupted" || e.state === "background" ? e.state : "completed",
+            source: e.source === "Sous-agent" ? "Sous-agent" : "Agent" });
+        } else if (e.type !== "result") {
+          const text=[e.text, e.name, e.detail].filter(Boolean).join(" ");
+          if(text.trim())log(e.type,text);
+        }
+      } });
       reported=r.reported;
       cost += r.cost;
       updateTask(id, { cost });
@@ -144,7 +162,9 @@ async function execute(id: string) {
       log("step", "Vérification du projet…");
       const cname = `atelier-${id}-check${attempt}`;
       current.set(id, cname);
-      const check = await runCheck(cname, ws.tree, p.check);
+      command("command_start", { id: cname, command: p.check, source: "Vérification" });
+      const check = await runCheck(cname, ws.tree, p.check, text => redact(text, Number.MAX_SAFE_INTEGER));
+      command("command_result", { id: cname, output: check.output, state: check.ok ? "completed" : "failed" });
       assertActive();
       if (check.ok) {
         files = await changedFiles(ws);
@@ -188,7 +208,7 @@ async function execute(id: string) {
   } catch (e: any) {
     const stopped = e.message === "cancelled";
     // Un ajustement qui échoue ou qu'on annule ne défait pas la proposition déjà envoyée : la tâche reste « terminée ».
-    updateTask(id, { status: followup ? "done" : stopped ? "cancelled" : "failed", last_error: stopped ? "Tâche annulée." : String(e.message || e).slice(0,2000) });
+    updateTask(id, { status: followup ? "done" : stopped ? "cancelled" : "failed", last_error: stopped ? "Tâche annulée." : redact(String(e.message || e),2000) });
     log(stopped ? "step" : "error", stopped ? "Tâche annulée." : String(e.message || e));
   } finally {
     revokeTaskTokens(id);

@@ -37,9 +37,9 @@ export const membersQuery = (o: string) => queryOptions({ queryKey: ["org", o, "
 export const invitationsQuery = (o: string) => queryOptions({ queryKey: ["org", o, "invitations"], queryFn: () => api.get<Invitation[]>(`${org(o)}/invitations`) });
 
 export const PAGE_SIZE = 20;
-export const tasksQuery = (o: string, f: TaskFilters, page: number) => queryOptions({
-  queryKey: ["org", o, "tasks", f, page],
-  queryFn: () => api.get<TaskPage>(`${org(o)}/tasks${qs({ ...f, limit: PAGE_SIZE, offset: page * PAGE_SIZE })}`),
+export const tasksQuery = (o: string, f: TaskFilters, page: number, size = PAGE_SIZE) => queryOptions({
+  queryKey: ["org", o, "tasks", f, page, size],
+  queryFn: () => api.get<TaskPage>(`${org(o)}/tasks${qs({ ...f, limit: size, offset: page * size })}`),
   placeholderData: keepPreviousData,
   // la liste se rafraîchit seule tant qu'une tâche est en file ou en cours
   refetchInterval: (q) => (q.state.data?.items.some((t) => isActive(t.status)) ? 4_000 : 30_000),

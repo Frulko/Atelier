@@ -5,6 +5,7 @@ export interface OrgRef { id: string; name: string; role: Role }
 export interface Me { user: { id: string; email: string; name: string | null }; orgs: OrgRef[] }
 
 export interface Task {
+  board_column?: "todo" | "doing" | "blocked" | "review" | "done" | null;
   waiting_question_id?:string|null;
   id: string; org_id: string; user_id: string | null; project: string; project_name: string | null; user_email: string | null;
   last_error?: string | null; pushed_sha?: string | null; automation_id?: string | null;
@@ -72,6 +73,7 @@ export interface Session { id: string; createdAt: number; lastUsedAt: number; ex
 export interface Activity { id: number; ts: number; action: string; orgId: string | null; orgName: string | null; meta: Record<string, unknown> | null; ip: string | null }
 
 export interface Conversation {
+  actionsEnabled: boolean;
   id: string; mode: "chat" | "task"; title: string; projectId: string | null; projectName: string | null; userId: string; userEmail: string | null;
   taskId: string | null; parentId: string | null; messageCount: number; preview: string; createdAt: number; updatedAt: number;
 }
@@ -97,6 +99,7 @@ export interface Automation {
 export interface AppNotification { id: number; orgId: string; title: string; body: string; url: string; createdAt: number; readAt: number | null }
 export interface Runtime { build: string; output: string; start: string; policy: "manual" | "approved" | "automatic"; preview: boolean }
 export interface Release {
+  number: number; taskPrompt: string | null;
   id: string; org_id: string; project_id: string; task_id: string | null; sha: string | null; ref: string;
   state: "queued" | "building" | "ready" | "failed" | "stopped"; error: string | null; check_ok: number; qa_ok: number;
   created_at: number; published_at: number | null; expires_at: number | null; log: string;

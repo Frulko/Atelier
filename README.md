@@ -32,8 +32,10 @@ A teammate writes *"add a volume discount to the Travel tab"*. An AI agent edits
 
 ## What you can do
 
-- **Discuss** with an assistant that has read your team's *knowledge* (tone, rules, vocabulary) and tells you which items it used. Nothing is modified; discussions are private to their author. Attach images, PDFs or text files.
+- **Discuss and act** with an assistant that uses your team’s knowledge. Project discussions can enable agent actions: launch a task, request an adjustment and check its status, with links to commands and logs. Discussions stay private; delegated tasks are visible to the team. Attach images, PDFs or text files.
 - **Run a task**: the agent changes the code in a sandbox. A task is also a conversation — ask for adjustments and it updates the same branch and merge request.
+- **Follow commands live**: open **Commandes** from a task or its conversation to see agent/check commands, their state and retained output. Commands appear at launch; output arrives on completion. The panel is read-only.
+- **Organize tasks in Kanban**: switch between list and board, move cards with drag-and-drop or a selector, and keep the execution status visible. Export task and version build logs as `.log` files.
 - **See where each project stands**: site health, last commit, deployment, latest task — in a project space with its own menu and breadcrumb.
 - **Configure the AI per project**: team instructions, agent settings (model, turns, budget), and the repository's `CLAUDE.md`, `AGENTS.md`, rules and skills — created from templates in the editor, or written by the agent.
 - **Create from an idea**: start an HTML, React or Node.js project with a managed repository; the Node starter includes accounts, SQLite and private file storage.

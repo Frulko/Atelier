@@ -2,6 +2,7 @@ import { spawn, execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { issueTaskToken, resolveTaskToken, revokeTaskTokens } from "./tokens.ts";
 import { cfg } from "./config.ts";
+import { taskLogRedactor } from "./security.ts";
 
 const run = promisify(execFile);
 
@@ -19,7 +20,7 @@ export function runAgent(opts: {
   instructions?: string; model?: string; subagentModel?: string; maxTurns?: number; budgetUsd?: number;
   /** Jeton de tâche : tient lieu de clé d'API dans le bac à sable (voir tokens.ts). */
   token: string;
-  onEvent: (e: { type: string; text?: string; name?: string; detail?: string; ok?: boolean; cost?: number }) => void;
+  onEvent: (e: { type: string; text?: string; name?: string; detail?: string; ok?: boolean; cost?: number; commandId?: string; command?: string; output?: string; state?: string; source?: string }) => void;
 }): Promise<{ ok: boolean; cost: number; reported:boolean; waiting?:string }> {
   const args = [
     "run", "--rm", "--name", opts.name, "--label", "atelier=1", "--label", `atelier-owner=${cfg.sandboxNetwork}`,
@@ -27,6 +28,7 @@ export function runAgent(opts: {
     "-v", `${opts.tree}:/work`,
     "-e", "TASK_PROMPT",
     "-e", `ATELIER_HUMAN_URL=${cfg.proxyUrl}/human/questions`,
+    "-e", `ATELIER_DEPENDENCIES_URL=${cfg.proxyUrl}/dependencies/install`,
     "-e", "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH=1",
     "-e", "CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS=2",
     "-e", "TASK_KNOWLEDGE",
@@ -70,32 +72,42 @@ export function runAgent(opts: {
 }
 
 /** Vérification du projet : sans réseau, sans agent. Rend la sortie pour la renvoyer à l'agent si ça échoue. */
-export async function runCheck(name: string, tree: string, command: string): Promise<{ ok: boolean; output: string }> {
+export async function runCheck(name: string, tree: string, command: string, filterOutput: (text: string) => string = text => text): Promise<{ ok: boolean; output: string }> {
   try {
     const { stdout, stderr } = await run("docker", [
       "run", "--rm", "--name", name, "--label", "atelier=1", "--label", `atelier-owner=${cfg.sandboxNetwork}`, "--network", "none", ...HARDENING,
       "-v", `${tree}:/work`, "--entrypoint", "sh", cfg.sandboxImage, "-c", command,
     ], { timeout: 300_000, maxBuffer: 5e6 });
-    return { ok: true, output: (stdout + stderr).slice(-3000) };
+    return { ok: true, output: filterOutput(stdout + stderr).slice(-3000) };
   } catch (e: any) {
     await kill(name);
-    return { ok: false, output: String((e.stdout ?? "") + (e.stderr ?? "") || e.message).slice(-3000) };
+    return { ok: false, output: filterOutput(String((e.stdout ?? "") + (e.stderr ?? "") || e.message)).slice(-3000) };
   }
 }
 
 export const kill = (name: string) => run("docker", ["kill", name]).catch(() => {});
 
-export async function installDependencies(name: string, tree: string, token: string): Promise<void> {
+export async function installDependencies(name: string, tree: string, token: string, onLog?: (text: string) => void): Promise<void> {
   const context=resolveTaskToken(token);
   if(!context)throw new Error("Jeton d'installation expiré.");
+  const redact = await taskLogRedactor(context.orgId);
+  if(context.controller.signal.aborted)throw new Error("Installation annulée.");
   const registryToken=issueTaskToken(name,context.orgId,"npm");
+  const stop=()=>{revokeTaskTokens(name);void kill(name);};
+  context.controller.signal.addEventListener("abort",stop,{once:true});
   try {
-    await run("docker", ["run", "--rm", "--name", name, "--label", "atelier=1", "--label", `atelier-owner=${cfg.sandboxNetwork}`, "--network", cfg.sandboxNetwork, ...HARDENING,
+    const result = await run("docker", ["run", "--rm", "--name", name, "--label", "atelier=1", "--label", `atelier-owner=${cfg.sandboxNetwork}`, "--network", cfg.sandboxNetwork, ...HARDENING,
       "-v", `${tree}:/work`, "-e", "ATELIER_NPM_TOKEN", "-e", `ATELIER_NPM_REGISTRY=${cfg.proxyUrl}/npm/`,
       "--entrypoint", "node", cfg.sandboxImage, "/opt/runner/install.mjs"],
       { env: { PATH: process.env.PATH, HOME: process.env.HOME, ATELIER_NPM_TOKEN: registryToken, ...Object.fromEntries(["DOCKER_HOST", "DOCKER_CONFIG", "DOCKER_CONTEXT"].filter(k => process.env[k]).map(k => [k, process.env[k]])) }, timeout: 260_000, maxBuffer: 5e6 });
-  } catch { await kill(name); throw new Error("Installation des dépendances impossible. Les paquets doivent venir du registre npm ; les scripts d'installation sont désactivés."); }
-  finally { revokeTaskTokens(name); }
+    onLog?.(redact(result.stdout + result.stderr));
+  } catch (e: any) {
+    await kill(name);
+    const detail = redact(String((e.stdout ?? "") + (e.stderr ?? "") || e.message));
+    onLog?.(detail);
+    throw new Error(`Installation npm échouée : ${detail.slice(-6000)}\nLes dépendances doivent venir du registre npm ; les scripts d'installation restent désactivés.`);
+  }
+  finally { context.controller.signal.removeEventListener("abort",stop);revokeTaskTokens(name); }
 }
 
 export async function stopOrphanContainers() {

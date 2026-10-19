@@ -18,7 +18,7 @@ import { atLeast } from "../../lib/roles";
 
 type Mode = "chat" | "task";
 const MODES: { id: Mode; label: string; hint: string; icon: typeof Bot }[] = [
-  { id: "chat", label: "Discuter", hint: "Poser une question, préparer une demande. L'assistant ne modifie rien.", icon: MessageSquare },
+  { id: "chat", label: "Discuter", hint: "Poser une question ou activer les actions pour confier un travail à un agent du projet.", icon: MessageSquare },
   { id: "task", label: "Tâche", hint: "L'agent modifie le code dans un bac à sable et prépare une proposition à relire.", icon: ListChecks },
 ];
 

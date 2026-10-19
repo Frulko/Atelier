@@ -93,3 +93,18 @@ test("secret scanner: known values, private keys, sensitive paths and escaped sy
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("command logs mask secrets before truncation and remove terminal controls", async () => {
+  const { safeLogText, taskLogRedactor } = await import("./security.ts");
+  const { createUser, createOrg } = await import("./db.ts");
+  const { storeSecret } = await import("./vault.ts");
+  const org = createOrg("Command logs", createUser("command-logs@example.test", "hash").id);
+  const secret = "private-command-value";
+  storeSecret(org, "git_token", null, "Git", secret);
+  const redact = await taskLogRedactor(org);
+  assert.match(redact(`command output: ${secret}`), /masqué/);
+  assert.match(redact("x".repeat(40000) + secret), /masqué/);
+  assert.equal(redact("\u001b[31mhello\u001b[0m\u0007"), "hello");
+  assert.match(safeLogText("token=atl_" + "a".repeat(32)), /masqué/);
+  assert.match(redact("x".repeat(33000)), /tronquée/);
+});

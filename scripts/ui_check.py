@@ -26,7 +26,7 @@ errors: list[str] = []
 def shot(page, name):
     if SHOTS:
         os.makedirs(SHOTS, exist_ok=True)
-        page.screenshot(path=f"{SHOTS}/{name}.png", full_page=True)
+        page.screenshot(path=f"{SHOTS}/{name}.png", full_page=True, animations="disabled")
 
 
 def watch(page):
@@ -85,10 +85,24 @@ with sync_playwright() as p:
     nav(admin, "Tâches")
     admin.get_by_role("button", name="Nouvelle tâche").first.click()
     dlg = admin.get_by_role("dialog")
-    dlg.get_by_label("Projet").select_option(label="Mini Régie (calculs)")
+    project_id = dlg.get_by_label("Projet").select_option(label="Mini Régie (calculs)")[0]
+    projects = admin.request.get(f"{BASE}/api/orgs/{ORG}/projects").json()
+    original_check = next(p["check"] for p in projects if p["id"] == project_id)
+    assert admin.request.patch(f"{BASE}/api/orgs/{ORG}/projects/{project_id}", data={"check": "sleep 3; " + original_check}).ok
     dlg.get_by_label("Ta demande").fill(f"ajoute une note depuis l'interface {RUN}")
     dlg.get_by_role("button", name="Lancer la tâche").click()
     admin.wait_for_url("**/tasks/*")
+    admin.get_by_role("button", name=re.compile("^Commandes")).click()
+    commands = admin.get_by_role("dialog", name="Commandes", exact=True)
+    expect(commands.locator("pre")).to_contain_text("$ sleep 3;", timeout=30000)
+    expect(commands.locator("pre")).to_contain_text("→ En cours")
+    shot(admin, "03a-commands-live")
+    expect(commands.locator("pre")).to_contain_text("→ Terminée", timeout=30000)
+    commands.get_by_role("button", name="Suivre le direct").click()
+    expect(commands.get_by_role("button", name="Suivre le direct")).to_have_attribute("aria-pressed", "false")
+    admin.keyboard.press("Escape")
+    expect(commands).not_to_be_visible()
+    assert admin.request.patch(f"{BASE}/api/orgs/{ORG}/projects/{project_id}", data={"check": original_check}).ok
     expect(admin.get_by_text("Branche atelier/").first).to_be_visible(timeout=90000)   # the live journal reached "branch pushed"
     expect(admin.get_by_text("Prête à valider").first).to_be_visible()
     expect(admin.get_by_text("NOTES.md").first).to_be_visible()                         # files changed
@@ -97,6 +111,9 @@ with sync_playwright() as p:
     nav(admin, "Conversations")                                                          # the task is also a conversation
     admin.get_by_role("link").filter(has_text=f"ajoute une note depuis l'interface {RUN}").click()
     expect(admin.get_by_test_id("turn-1")).to_be_visible()
+    admin.get_by_role("button", name=re.compile("^Commandes")).click()
+    expect(admin.get_by_role("dialog", name="Commandes", exact=True).locator("pre")).to_contain_text("→ Terminée")
+    admin.keyboard.press("Escape")
     admin.get_by_label("Demander un ajustement").fill(f"ajoute aussi les horaires {RUN}")
     admin.get_by_label("Demander un ajustement").press("Enter")                          # a follow-up = a new agent turn, same branch
     expect(admin.get_by_text("Ajustement 1")).to_be_visible()
@@ -116,6 +133,16 @@ with sync_playwright() as p:
     shot(admin, "04-tasks")
     admin.get_by_role("button", name="Réinitialiser les filtres").click()
     expect(admin).to_have_url(f"{OBASE}/tasks")
+    admin.get_by_role("button", name="Kanban", exact=True).click()
+    board=admin.get_by_label("Tableau Kanban", exact=True)
+    expect(board).to_be_visible()
+    card=board.get_by_role("listitem").filter(has_text=f"ajoute une note depuis l'interface {RUN}").first
+    card.get_by_role("combobox").select_option("done")
+    expect(board.get_by_role("region", name="Terminé", exact=True).get_by_text(f"ajoute une note depuis l'interface {RUN}", exact=True)).to_be_visible()
+    admin.reload()
+    expect(admin.get_by_label("Tableau Kanban", exact=True).get_by_role("region", name="Terminé", exact=True).get_by_text(f"ajoute une note depuis l'interface {RUN}", exact=True)).to_be_visible()
+    shot(admin,"04b-kanban")
+    admin.get_by_role("button", name="Liste", exact=True).click()
 
     # --------------------------------------------------------------- projects
     print('UI: projects', flush=True)
@@ -292,6 +319,15 @@ with sync_playwright() as p:
     os.unlink(horaires)
     expect(admin.get_by_role("link", name="Voir dans le projet")).to_be_visible()             # back to the project from an organization-level chat
     shot(admin, "05c-conversation")
+    admin.get_by_label("Autoriser les actions de l’agent", exact=True).check()
+    expect(admin.get_by_label("Autoriser les actions de l’agent", exact=True)).to_be_enabled()
+    admin.get_by_label("Ton message").fill(f"[action-tache] Ajoute une note depuis la discussion {RUN}")
+    admin.get_by_label("Ton message").press("Enter")
+    action=admin.get_by_role("link",name="Voir la tâche, les commandes et les logs",exact=True)
+    expect(action).to_be_visible(timeout=30000)
+    shot(admin,"05d-chat-action")
+    action.click()
+    expect(admin.get_by_role("heading",level=1)).to_contain_text("Ajoute une note depuis la discussion")
     nav(admin, "Conversations")
     expect(admin.get_by_text(f"Quel ton pour la page Contact {RUN}").first).to_be_visible()
     nav(admin, "Connaissances")
@@ -452,8 +488,15 @@ with sync_playwright() as p:
     expect(admin.get_by_role("heading", name="Décisions du technicien", exact=True)).to_be_visible()
     expect(admin.get_by_label("Canal du technicien")).to_have_value("telegram")
     admin.get_by_label("Canal du technicien").select_option("discord")
-    expect(admin.get_by_label("Identifiant du salon Discord")).to_be_visible()
+    expect(admin.get_by_label("Identifiant numérique du salon Discord")).to_be_visible()
+    admin.get_by_label("Type de salon", exact=True).select_option("forum")
+    expect(admin.get_by_label("Identifiant de l’étiquette du forum (facultatif)")).to_be_visible()
     shot(admin, "10b-governance")
+    admin.get_by_label("Connexion Discord").select_option("webhook")
+    expect(admin.get_by_label("URL du webhook Discord")).to_be_visible()
+    expect(admin.get_by_label("Identifiant numérique du salon Discord")).to_have_count(0)
+    expect(admin.get_by_text("Le webhook envoie les notifications", exact=False)).to_be_visible()
+    admin.get_by_label("Connexion Discord").select_option("bot")
     # No bot credentials are entered: browser tests never send real chat messages.
 
     # ---------------------------------------------------------- background agents and publications

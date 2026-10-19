@@ -8,10 +8,14 @@ import { cfg } from "./config.ts";
 import { assertBudget, overBudget } from "./budget.ts";
 import { resolveTaskToken } from "./tokens.ts";
 import { providerKey } from "./vault.ts";
-import { db, getTask, recordProxyCall, roleOf } from "./db.ts";
+import { addEvent, db, getTask, recordProxyCall, roleOf } from "./db.ts";
 import { can } from "./access.ts";
 import { body, HttpError } from "./http.ts";
-import { assertNoSecretText } from "./security.ts";
+import { assertNoSecretText, taskLogRedactor } from "./security.ts";
+import { installDependencies, kill } from "./sandbox.ts";
+import { workspace } from "./git.ts";
+
+const installing = new Set<string>();
 
 /*
  * Le bac à sable n'a ni Internet ni clé d'API : il parle à ce proxy sous /<fournisseur>/… avec son JETON DE TÂCHE.
@@ -94,12 +98,37 @@ export function redactStream(secret: string) {
 
 export function createProxy() {
   return http.createServer(async (req, res) => {
+    if (req.url === "/dependencies/install" && req.method === "POST") {
+      const ctx = resolveTaskToken(bearer(req.headers)), task = ctx ? getTask(ctx.taskId) : undefined;
+      if (!ctx || ctx.scope !== "model" || !task || task.org_id !== ctx.orgId || task.status !== "running" || !can(roleOf(ctx.orgId, task.user_id ?? "") ?? "viewer", "task:create")) return deny(res, 403, "Installation non autorisée.");
+      if (installing.has(task.id)) return deny(res, 409, "Une installation est déjà en cours.");
+      const name = `atelier-${task.id}-tools-install`, commandId = `${name}:${Date.now()}`;
+      const stop = () => { void kill(name); };
+      installing.add(task.id); ctx.controller.signal.addEventListener("abort", stop, { once: true });
+      try {
+        await body(req, 200);
+        const redact = await taskLogRedactor(ctx.orgId);
+        addEvent(task.id, "command_start", JSON.stringify({ id: commandId, source: "Installation", command: "npm install --ignore-scripts --no-audit --no-fund" }));
+        let output = "";
+        try {
+          await installDependencies(name, workspace(task.id).tree, bearer(req.headers)!, text => { output = text; });
+          addEvent(task.id, "command_result", JSON.stringify({ id: commandId, state: "completed", output }));
+          res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ output: output || "Dépendances installées." }));
+        } catch (e) {
+          const error = redact((e as Error).message);
+          addEvent(task.id, "command_result", JSON.stringify({ id: commandId, state: "failed", output: output || error }));
+          deny(res, 422, error);
+        }
+      } catch { if (!res.headersSent) deny(res, 400, "Demande d'installation invalide."); }
+      finally { installing.delete(task.id); ctx.controller.signal.removeEventListener("abort", stop); }
+      return;
+    }
     if(req.url==="/human/questions" && req.method==="POST") {
       const ctx=resolveTaskToken(bearer(req.headers)),task=ctx?getTask(ctx.taskId):undefined;
       if(!ctx || ctx.scope!=="model" || !task || task.org_id!==ctx.orgId)return deny(res,401,"Jeton de tâche invalide.");
       try {
         const q=await askHuman(task,await body(req,3000));
-        res.writeHead(201,{"content-type":"application/json"}).end(JSON.stringify({id:q.id}));
+        res.writeHead(q.state==="answered"?200:201,{"content-type":"application/json"}).end(JSON.stringify({id:q.id,state:q.state,...(q.state==="answered"?{answer:q.answer,selectedOption:(JSON.parse(q.options_json) as string[])[Number(q.answer)-1]}:{})}));
       }catch(e){deny(res,e instanceof HttpError?e.status:422,e instanceof HttpError?e.message:"Question refusée.");}
       return;
     }

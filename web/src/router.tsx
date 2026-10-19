@@ -79,7 +79,7 @@ const child = <P extends string>(path: P, component: () => React.JSX.Element) =>
 const overviewRoute = createRoute({ getParentRoute: () => orgRoute, path: "/", component: OverviewPage });
 const tasksRoute = createRoute({
   getParentRoute: () => orgRoute, path: "tasks", component: TasksPage,
-  validateSearch: (s: Record<string, unknown>) => compact({ status: str(s.status), project: str(s.project), user: str(s.user), q: str(s.q), from: str(s.from), to: str(s.to), page: pageNo(s.page) }),
+  validateSearch: (s: Record<string, unknown>) => compact({ status: str(s.status), project: str(s.project), user: str(s.user), q: str(s.q), from: str(s.from), to: str(s.to), page: pageNo(s.page), view:s.view==="kanban"?"kanban":undefined }),
 });
 const taskRoute = createRoute({ getParentRoute: () => orgRoute, path: "tasks/$taskId", component: TaskDetailPage });
 const conversationsRoute = createRoute({

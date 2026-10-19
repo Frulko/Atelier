@@ -30,6 +30,7 @@ jobs:
         with: { node-version: 24, cache: npm, cache-dependency-path: orchestrator/package-lock.json }
       - run: npm ci && npm run check && npm test
         working-directory: orchestrator
+      - run: node --test scripts/command-hooks.test.mjs
 
   web:
     runs-on: ubuntu-latest

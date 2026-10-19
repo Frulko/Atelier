@@ -71,6 +71,7 @@ const previewOf = (lastText: string | null | undefined) => {
   try { return (JSON.parse(lastText ?? "[]") as { type: string; text?: string }[]).map((p) => (p.type === "text" ? p.text : "")).join(" ").replace(/\s+/g, " ").trim().slice(0, 140); } catch { return ""; }
 };
 const conversationJson = (c: ConversationRow) => ({
+  actionsEnabled: !!c.actions_enabled,
   id: c.id, mode: c.mode, title: c.title, projectId: c.project_id, projectName: c.project_name ?? null, userId: c.user_id, userEmail: c.user_email ?? null,
   taskId: c.task_id, parentId: c.parent_id, messageCount: c.message_count ?? 0, preview: previewOf(c.last_text), createdAt: c.created_at, updatedAt: c.updated_at,
 });
@@ -641,10 +642,18 @@ export function createApp() {
             if (!conv) return json(res, 404, { error: "introuvable" });
             if (req.method === "GET" && !sub) return json(res, 200, { conversation: conversationJson(conv), messages: getMessages(conv.id).map(toUIMessage), task: conv.task_id ? getTaskDetail(conv.task_id, orgId) ?? null : null });
             if (req.method === "PATCH" && !sub) {
-              const { title } = await body(req);
-              if (typeof title !== "string" || !title.trim() || title.trim().length > 120) return json(res, 400, { error: "titre invalide (1 à 120 caractères)" });
+              const { title, actionsEnabled } = await body(req);
+              if (title===undefined && actionsEnabled===undefined) return json(res,400,{error:"aucune modification demandée"});
+              if (title!==undefined && (typeof title !== "string" || !title.trim() || title.trim().length > 120)) return json(res, 400, { error: "titre invalide (1 à 120 caractères)" });
               if (conv.user_id !== user.id && !(conv.mode === "task" && can(a.role, "task:cancel_any"))) return json(res, 403, { error: "droits insuffisants" });
-              setConversationTitle(conv.id, title.trim());
+              if(actionsEnabled!==undefined) {
+                if(typeof actionsEnabled!=="boolean")return json(res,400,{error:"choix des actions invalide"});
+                if(conv.mode!=="chat" || !conv.project_id)return json(res,409,{error:"les actions nécessitent une discussion rattachée à un projet"});
+                if(!can(a.role,"task:create"))return json(res,403,{error:"droits insuffisants"});
+                db.prepare("update conversations set actions_enabled=?,updated_at=? where id=?").run(Number(actionsEnabled),Date.now(),conv.id);
+                log("conversation.actions",{type:"conversation",id:conv.id},{enabled:actionsEnabled});
+              }
+              if(title!==undefined)setConversationTitle(conv.id, title.trim());
               return json(res, 200, conversationJson(getConversationFor(conv.id, orgId, user.id)!));
             }
             if (req.method === "DELETE" && !sub) {
@@ -730,6 +739,14 @@ export function createApp() {
           if (typeof a === "string") return deny(a);
           const task = getTaskInOrg(itemId, orgId); // filtre par l'organisation de la session, pas par l'id seul
           if (!task) return json(res, 404, { error: "introuvable" });
+          if(req.method==="PATCH" && !sub) {
+            if(!can(a.role,"task:create") || (task.user_id!==user.id && !can(a.role,"task:cancel_any")))return json(res,403,{error:"droits insuffisants"});
+            const {boardColumn}=await body(req,500);
+            if(boardColumn!==null && !["todo","doing","blocked","review","done"].includes(boardColumn))return json(res,400,{error:"colonne Kanban invalide"});
+            db.prepare("update tasks set board_column=? where id=? and org_id=?").run(boardColumn,task.id,orgId);
+            log("task.organize",{type:"task",id:task.id},{column:boardColumn});
+            return json(res,200,getTaskDetail(task.id,orgId));
+          }
 
           if (req.method === "POST" && sub === "/cancel") {
             const c = gate(task.user_id === user.id ? "task:cancel_own" : "task:cancel_any");

@@ -6,6 +6,7 @@ import { cfg } from "./config.ts";
 export const STATUSES = ["queued", "running", "done", "no_changes", "failed", "cancelled"] as const;
 export type Status = (typeof STATUSES)[number];
 export type Task = {
+  board_column: "todo" | "doing" | "blocked" | "review" | "done" | null;
   waiting_question_id: string | null; workspace_saved: number;
   project_name?: string | null;
   id: string; org_id: string | null; user_id: string | null; project: string; prompt: string; status: Status;
@@ -126,6 +127,8 @@ if (!taskCols.includes("pushed_sha")) db.exec("alter table tasks add column push
 if (!taskCols.includes("automation_id")) db.exec("alter table tasks add column automation_id text");
 for (const col of ["waiting_question_id"]) if (!taskCols.includes(col)) db.exec(`alter table tasks add column ${col} text`);
 if (!taskCols.includes("workspace_saved")) db.exec("alter table tasks add column workspace_saved integer not null default 0");
+if (!taskCols.includes("board_column")) db.exec("alter table tasks add column board_column text");
+if (!(db.prepare("pragma table_info(conversations)").all() as {name:string}[]).some(c=>c.name==="actions_enabled"))db.exec("alter table conversations add column actions_enabled integer not null default 0");
 const eventCols = (db.prepare("pragma table_info(events)").all() as { name: string }[]).map((c) => c.name);
 if (!eventCols.includes("turn")) db.exec("alter table events add column turn integer not null default 1");
 db.exec("create index if not exists tasks_org on tasks(org_id, created_at)");
@@ -695,6 +698,7 @@ export const setOrgChat = (orgId: string, provider: string | null, model: string
 
 export type Mode = "chat" | "task";
 export type ConversationRow = {
+  actions_enabled: number;
   id: string; org_id: string; user_id: string; project_id: string | null; mode: Mode; title: string; task_id: string | null; parent_id: string | null;
   created_at: number; updated_at: number; user_email?: string | null; project_name?: string | null; message_count?: number; last_text?: string | null;
 };

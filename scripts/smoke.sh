@@ -194,6 +194,7 @@ curl -sf "${A[@]}" $U/api/me/notifications | grep -q 'La proposition est prête'
 curl -sf "${A[@]}" -X PATCH $O/automations/$AUTO -d '{"enabled":false}' >/dev/null
 
 node scripts/app-check.mjs || fail "les services applicatifs ou leur isolation échouent"
+node scripts/npm-lock-check.mjs || fail "la mise à jour du verrou npm échoue"
 node scripts/governance-check.mjs || fail "le budget ou la reprise humaine échoue"
 
 # 4c. Interface web pilotée dans un vrai navigateur (si Playwright est installé : pip install playwright)

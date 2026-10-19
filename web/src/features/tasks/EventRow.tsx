@@ -1,6 +1,7 @@
 import clsx from "clsx";
 import { AlertTriangle, Check, CircleDot, ExternalLink, FileCode2, Wrench } from "lucide-react";
 import type { TaskEvent } from "../../lib/types";
+import { Markdown } from "../../components/ui/Markdown";
 
 /** Une ligne du journal, présentée selon sa nature : étape, message de l'agent, outil, échec de vérification, fin. */
 export function EventRow({ e, last }: { e: TaskEvent; last: boolean }) {
@@ -12,7 +13,7 @@ export function EventRow({ e, last }: { e: TaskEvent; last: boolean }) {
       {!last && <span className="absolute left-[13px] top-7 h-full w-px bg-line-strong" aria-hidden />}
       <span className={clsx("z-10 grid size-7 shrink-0 place-items-center rounded-full", tone)} aria-hidden>{icon}</span>
       <div className="min-w-0 flex-1 pt-0.5">
-        {e.type === "text" && <p className="whitespace-pre-wrap rounded-xl bg-raised px-3.5 py-2.5 text-[15px] leading-relaxed text-ink ring-1 ring-line">{e.text}</p>}
+        {e.type === "text" && <div className="rounded-xl bg-raised px-3.5 py-2.5 text-[15px] leading-relaxed text-ink ring-1 ring-line"><Markdown>{e.text}</Markdown></div>}
         {e.type === "tool" && <p className="font-mono text-[13px] text-muted">{e.text}</p>}
         {e.type === "step" && <p className="text-[15px] font-medium text-ink">{e.text}</p>}
         {e.type === "check_failed" && <><p className="text-sm font-medium text-bad">La vérification a échoué : l'agent est relancé avec cette sortie.</p><pre className="mt-2 max-h-48 overflow-auto rounded-xl bg-bad-soft p-3 font-mono text-xs text-bad">{e.text}</pre></>}

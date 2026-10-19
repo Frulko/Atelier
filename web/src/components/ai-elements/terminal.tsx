@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/shadcn/button";
 import { cn } from "@/lib/utils";
-import Ansi from "ansi-to-react";
+import AnsiModule from "ansi-to-react";
 import { CheckIcon, CopyIcon, TerminalIcon, Trash2Icon } from "lucide-react";
 import type { ComponentProps, HTMLAttributes } from "react";
 import {
@@ -14,6 +14,8 @@ import {
   useRef,
   useState,
 } from "react";
+
+const Ansi = (AnsiModule as unknown as { default?: typeof AnsiModule }).default ?? AnsiModule;
 
 interface TerminalContextType {
   output: string;

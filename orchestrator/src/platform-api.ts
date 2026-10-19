@@ -8,6 +8,7 @@ import {
   getProjectInOrg,
   getTaskInOrg,
   getConversationFor,
+  getEvents,
   updateProject,
   updateTask,
   type User,
@@ -42,6 +43,7 @@ import { rowToJson, rowToProject } from "./projects.ts";
 import { retryProposal } from "./git.ts";
 import { startTask } from "./start.ts";
 import { overBudget } from "./budget.ts";
+import { taskLogRedactor } from "./security.ts";
 
 export async function platformApi(
   req: IncomingMessage,
@@ -91,7 +93,7 @@ export async function platformApi(
     return true;
   }
   const match =
-    /^\/api\/orgs\/([0-9a-f]{16})\/(automations|projects|releases|tasks)(?:\/([0-9a-f]{8,16}|scaffold|templates))?(?:\/(runtime|environment|releases|run|publish|rollback|resume|access|report|desktop.png|mobile.png))?$/.exec(
+    /^\/api\/orgs\/([0-9a-f]{16})\/(automations|projects|releases|tasks)(?:\/([0-9a-f]{8,16}|scaffold|templates))?(?:\/(runtime|environment|releases|run|publish|rollback|resume|access|report|logs|desktop.png|mobile.png))?$/.exec(
       path,
     );
   if (!match) return false;
@@ -100,7 +102,7 @@ export async function platformApi(
     kind === "automations" ||
     kind === "releases" ||
     (kind === "projects" && (id === "scaffold" || id === "templates" || sub)) ||
-    (kind === "tasks" && sub === "resume")
+    (kind === "tasks" && (sub === "resume" || sub === "logs"))
   ))
     return false;
   const role = roleOf(org!, user.id);
@@ -119,6 +121,24 @@ export async function platformApi(
       { type: kind, id: targetId },
       meta,
     );
+  if (kind === "tasks" && sub === "logs" && req.method === "GET") {
+    gate("task:read");
+    const task = getTaskInOrg(id!, org!);
+    if (!task) throw new HttpError(404, "Tâche introuvable.");
+    const redact = await taskLogRedactor(org!);
+    const events = getEvents(task.id).map(e => {
+      let text=e.text;
+      if(e.type.startsWith("command_"))try {
+        const c=JSON.parse(text);
+        if(e.type==="command_start" && typeof c.command==="string")text=`${typeof c.source==="string"?c.source:"Commande"}\n$ ${c.command}`;
+        if(e.type==="command_result" && typeof c.output==="string")text=`Résultat : ${c.state??"inconnu"}\n${c.output}`;
+      }catch{/* Older events may be plain text. */}
+      return `${new Date(e.ts).toISOString()} · Tour ${e.turn ?? 1} · ${e.type}\n${redact(text)}`;
+    }).join("\n\n");
+    res.writeHead(200, { "content-type": "text/plain; charset=utf-8", "content-disposition": `attachment; filename="atelier-task-${task.id}.log"`, "cache-control": "no-store" });
+    res.end(`Tâche : ${redact(task.prompt)}\nBranche : ${task.branch ?? "en préparation"}\nÉtat : ${task.status}\n\n${events}`);
+    return true;
+  }
   if (kind === "automations") {
     gate("project:manage");
     if (!id && req.method === "GET") {
@@ -266,8 +286,14 @@ export async function platformApi(
     );
     const release = id ? getRelease(id, org!) : undefined;
     if (!release) throw new HttpError(404, "Version introuvable.");
+    if (sub === "logs" && req.method === "GET") {
+      const redact = await taskLogRedactor(org!);
+      res.writeHead(200, { "content-type": "text/plain; charset=utf-8", "content-disposition": `attachment; filename="atelier-release-${release.id}.log"`, "cache-control": "no-store" });
+      res.end(`Projet : ${getProjectInOrg(release.project_id, org!)?.name}\nBranche : ${release.ref}\nCommit : ${release.sha ?? "en préparation"}\nÉtat : ${release.state}\n\n${redact(release.log, 120000)}`);
+      return true;
+    }
     if (!sub && req.method === "GET") {
-      json(res, 200, releaseJson(release));
+      json(res, 200, releaseJson(release, true));
       return true;
     }
     if (sub === "access" && req.method === "POST") {
